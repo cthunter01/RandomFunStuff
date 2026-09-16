@@ -6,6 +6,7 @@ explore.py -- wander an endless ASCII wilderness.
     python3 explore.py --new           a brand new world
     python3 explore.py --seed 42       a specific world (resumes it if you've been there)
     python3 explore.py --postcard      print a view of the world and exit
+    python3 explore.py --mute          no sound this time (M toggles it in the game)
 """
 
 import argparse
@@ -19,11 +20,13 @@ import sys
 import time
 
 import content
+import sound
 import worldgen
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SAVE_DIR = os.path.join(HERE, "saves")
 POSTCARD_DIR = os.path.join(HERE, "postcards")
+SOUND_CACHE = os.path.join(HERE, ".cache", "sounds")
 
 DAY_LENGTH = 480            # turns per day
 AMBIENT_CHANCE = 0.03       # per step, chance of a flavor message
@@ -31,6 +34,9 @@ CHATTER_CHANCE = 0.01       # per step, chance a companion "says" something
 MAX_COMPANIONS = 12
 METERS_PER_STEP = 10
 RUN_STEPS = 60
+STEP_SOUNDS = {"water": "splash", "river": "splash", "cave_pool": "splash", "swamp": "splash",
+               "tundra": "crunch", "taiga": "crunch"}
+FOOTSTEPS = set(STEP_SOUNDS.values()) | {"step"}
 
 
 # --------------------------------------------------------------------------
@@ -45,6 +51,7 @@ class Game:
         self.turn = DAY_LENGTH // 10
         self.steps = 0
         self.messages = []          # newest last
+        self.cues = []              # sounds to play (names in content.SOUNDS); the UI empties it
         self.message_count = 0      # lines ever added (the UI uses it to spot new ones)
         self.said = 0               # say() calls, repeats included
         self.journal = []
@@ -175,23 +182,33 @@ class Game:
     def note(self, text):
         self.journal.append(f"Day {self.day}: {text}")
 
+    def cue(self, name):
+        if name not in self.cues:
+            self.cues.append(name)
+
     def move(self, dx, dy):
         nx, ny = self.x + dx, self.y + dy
         cell = self.cell_at(nx, ny)
         if not worldgen.walkable(cell):
             self.say(f"The {worldgen.describe(cell)} blocks your way.")
+            self.cue("bump")
             return False
         self.remember([(self.x, self.y), (nx, ny)])   # runs skip redraws; keep the way back
         self.trail.insert(0, (self.x, self.y))
         del self.trail[MAX_COMPANIONS:]
         self.x, self.y = nx, ny
         self.steps += 1
+        self.cue(STEP_SOUNDS.get(cell[0], "step"))
         self.tick(cell)
         self.arrive(cell)
         return True
 
     def tick(self, cell=None):
+        before = self.time_of_day()
         self.turn += 1
+        now = self.time_of_day()
+        if now != before and not self.cave and now in ("dawn", "night"):
+            self.cue(now)
         if random.random() < AMBIENT_CHANCE:
             lines = list(content.AMBIENT.get(cell[0] if cell else "", []))
             if not self.cave and self.time_of_day() == "night":
@@ -217,6 +234,7 @@ class Game:
                 if sid not in self.structures_seen:
                     self.structures_seen.add(sid)
                     self.say(s["text"] or f"You find {a_or_an(s['name'])}.")
+                    self.cue("structure")
                     self.note(f"Found {a_or_an(s['name'])} at {self.x}, {self.y}.")
 
     def discover(self, cell):
@@ -227,6 +245,7 @@ class Game:
         odd = worldgen.ODDITIES[cell[3]]
         text = odd.get("text", "Something odd.")
         self.say(text)
+        self.cue(odd.get("sound") or "discover")
         where = "in a cave near {}, {}".format(*self.cave.entrance) if self.cave \
             else f"at {self.x}, {self.y}"
         self.note(f"{text} ({where})")
@@ -244,6 +263,7 @@ class Game:
         self.x, self.y = self.cave.start
         self.trail = []
         self.say(random.choice(content.ENTER_CAVE))
+        self.cue("cave_in")
         if f"{x},{y}" not in self.caves_seen:
             self.caves_seen.add(f"{x},{y}")
             self.note(f"Explored a cave at {x}, {y}.")
@@ -252,6 +272,7 @@ class Game:
         self.x, self.y = self.cave.entrance
         self.cave = None
         self.trail = []
+        self.cue("cave_out")
         self.say("You climb back out into the " +
                  ("night air." if self.time_of_day() == "night" else "open air."))
 
@@ -268,10 +289,12 @@ class Game:
     def sleep(self):
         until_dawn = DAY_LENGTH - self.turn % DAY_LENGTH
         self.pass_time(until_dawn)
+        self.cue("sleep")
         self.say("You curl up and sleep until dawn. You dream of " + random.choice(content.DREAMS))
 
     def make_camp(self):
         self.camp = self.where()[1]
+        self.cue("camp")
         self.say("You mark this spot as camp.")
 
     # ---- the API content.py effects use ----------------------------------
@@ -281,12 +304,14 @@ class Game:
             self.cave = None
         self.x, self.y = self.world.find_open_spot(self.x + dx, self.y + dy)
         self.trail = []
+        self.cue("teleport")
 
     def pass_time(self, turns):
         self.turn += max(0, int(turns))
 
     def trip(self, turns):
         self.trip_until = self.turn + int(turns)
+        self.cue("trip")
 
     def add_companion(self, glyph, color, name):
         """Returns False (and says so) if the party is already full."""
@@ -294,6 +319,7 @@ class Game:
             self.say(f"{name} looks at your entourage and decides against it.")
             return False
         self.companions.append({"glyph": str(glyph)[:1] or "?", "color": color, "name": name})
+        self.cue("friend")
         return True
 
 
@@ -315,6 +341,26 @@ def save_game(game):
     with open(tmp, "w") as f:
         json.dump(game.to_state(), f, indent=1)
     os.replace(tmp, save_path(game.seed))
+
+
+def load_settings():
+    try:
+        with open(os.path.join(SAVE_DIR, "settings.json")) as f:
+            saved = json.load(f)
+        return {"sound": bool(saved.get("sound", True))}
+    except (OSError, ValueError, AttributeError):
+        return {"sound": True}
+
+
+def save_settings(settings):
+    try:
+        os.makedirs(SAVE_DIR, exist_ok=True)
+        path = os.path.join(SAVE_DIR, "settings.json")
+        with open(path + ".tmp", "w") as f:
+            json.dump(settings, f)
+        os.replace(path + ".tmp", path)
+    except OSError:
+        pass   # not being able to remember a preference is no reason to stop
 
 
 def load_game(seed=None, new=False, peek=False):
@@ -638,6 +684,44 @@ ESC_ARROWS = {"A": UP, "B": DOWN, "C": RIGHT, "D": LEFT}
 RUN_STOP_KINDS = {"water", "river", "swamp", "sand", "mountain", "cave",
                   "floor", "door", "deco", "rubble", "oddity", "found"}
 
+def music_mood(game):
+    """Which MUSIC loop fits right now."""
+    if game.tripping():
+        return "trip"
+    if game.underground:
+        return "cave"
+    if game.time_of_day() in ("dusk", "night"):
+        return "night"
+    if game.world.kind(game.x, game.y) in ("tundra", "taiga"):
+        return "snow"
+    return "day"
+
+
+def play_cues(game, audio):
+    """Play what the last keypress asked for (a few distinct sounds at most)."""
+    names = sorted(game.cues, key=lambda n: n in FOOTSTEPS)[:3]   # footsteps are the first to go
+    game.cues.clear()
+    if audio:
+        for name in names:
+            audio.play(name)
+        audio.set_mood(music_mood(game))
+
+
+def toggle_sound(game, audio, settings):
+    on = not audio.enabled
+    audio.set_enabled(on)
+    settings["sound"] = on
+    save_settings(settings)
+    if not on:
+        game.say("Sound off. (M turns it back on.)")
+    elif audio.player:
+        game.say("Sound on.")
+        game.cue("blip")
+    else:
+        game.say("Sound on, but there's no audio player to play it with "
+                 "(pw-play, paplay, aplay, afplay, ffplay or mpv).")
+
+
 HELP = [
     "Wander. Look at things. That's the game.",
     "",
@@ -649,6 +733,7 @@ HELP = [
     "make camp     c   (the status bar points you back to it)",
     "map           m   (+/- to zoom)",
     "notebook      n   (everything you've found)",
+    "sound         M   (on/off; remembered for next time)",
     "postcard      p   (saves a postcard of where you are to postcards/)",
     "caves         walk onto an O (or press > while on one) to go in;",
     "              stand on the < and press < to climb out",
@@ -737,7 +822,7 @@ def drain_input(scr):
     return seq
 
 
-def play(scr, game):
+def play(scr, game, audio=None, settings=None):
     try:
         curses.curs_set(0)
     except curses.error:
@@ -746,8 +831,16 @@ def play(scr, game):
     colors = Colors()
     last_save = time.monotonic()
     fresh = 1
+    reported = None
+    settings = settings if settings is not None else {"sound": True}
     try:
         while True:
+            play_cues(game, audio)
+            if audio and audio.enabled and audio.problem != reported:
+                reported = audio.problem   # back to None once M clears it, so new trouble is told
+                if reported:
+                    game.say(reported)
+                    fresh = 1
             draw(scr, game, colors, fresh)
             scr.refresh()
             k = scr.getch()
@@ -792,9 +885,12 @@ def play(scr, game):
                 n = len(game.journal)
                 pager(scr, f"Notebook ({n} entr{'y' if n == 1 else 'ies'}, newest first)",
                       list(reversed(game.journal)) or ["Nothing yet. Go look at things."])
+            elif k == ord("M") and audio:
+                toggle_sound(game, audio, settings)
             elif k == ord("p"):
                 try:
                     game.say(f"Postcard saved to {write_postcard(game)}")
+                    game.cue("camera")
                 except OSError as err:
                     game.say(f"The postcard blew away ({err.strerror}).")
             elif k == ord("?"):
@@ -815,6 +911,7 @@ def main(argv=None):
     ap.add_argument("--postcard", action="store_true", help="print a view of the world and exit")
     ap.add_argument("--at", metavar="X,Y", help="with --postcard: where to look")
     ap.add_argument("--size", default="72x24", metavar="WxH", help="with --postcard: view size")
+    ap.add_argument("--mute", action="store_true", help="no sound this time (M toggles it in the game)")
     args = ap.parse_args(argv)
 
     if args.postcard:
@@ -852,10 +949,16 @@ def main(argv=None):
 
     for sig in signals:
         signal.signal(sig, quit_now)
+    settings = load_settings()
+    audio = sound.Sound(content.SOUNDS, content.MUSIC, SOUND_CACHE,
+                        enabled=settings["sound"] and not args.mute)
     try:
-        curses.wrapper(play, game)
+        curses.wrapper(play, game, audio, settings)
     finally:
-        save_game(game)
+        try:
+            save_game(game)
+        finally:
+            audio.close()
     print(f"You walked {game.steps} steps over {game.day} day(s) and found "
           f"{len(game.found)} odd thing(s). World {game.seed} is saved; "
           f"run explore.py again to keep wandering.")

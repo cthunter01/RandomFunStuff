@@ -26,6 +26,10 @@ Quick recipes
 * New ambient message: add a line to AMBIENT under a terrain name.
   Messages can be long-ish; they wrap onto two lines (~150 characters max).
 
+* New sound: add a recipe to SOUNDS (the format is explained there), then
+  play it from an effect with game.cue("quack"), or give a discovery its own
+  with "sound": "quack". Set a sound to "" to silence it (e.g. "step").
+
 Biomes: sand, meadow, woods, forest, swamp, scrub, tundra, taiga, hills,
 mountain (and "cave" for discoveries underground).
 Colors: green, dark_green, olive, blue, dark_blue, cyan, sand, yellow, orange,
@@ -578,8 +582,68 @@ DREAMS = [
 
 
 # --------------------------------------------------------------------------
+# SOUNDS -- tiny synthesized sound effects (M in the game turns sound on/off).
+# A recipe is  "wave: note seconds, note seconds, ..."
+#   wave   sine, triangle, square, saw or noise; add *0.5 to make it quieter
+#   note   C4, F#5, Bb3 (or a number of Hz); "-" is a pause;
+#          "C4>G5" slides from one to the other (noise: higher = hissier)
+# Several layers play at once when joined with " + ".
+# --------------------------------------------------------------------------
+SOUNDS = {
+    # the game plays these by itself
+    "step":      "noise*0.15: C6>A4 .035",
+    "crunch":    "noise*0.15: E6>A5 .06",
+    "splash":    "noise*0.12: C8>C5 .12",
+    "bump":      "square*0.25: E3>C3 .07",
+    "discover":  "triangle*0.6: C6 .07, E6 .07, G6 .07, C7 .35",
+    "structure": "triangle*0.5: G4 .14, C5 .14, E5 .4",
+    "cave_in":   "sine*0.45: G3>C2 .6 + triangle*0.2: G4>C3 .6 + noise*0.1: C6>C4 .5",
+    "cave_out":  "sine*0.6: C2>G3 .45 + triangle*0.2: - .3, C6 .15",
+    "sleep":     "sine*0.45: E5 .35, C5 .35, A4 .35, G4 .8",
+    "dawn":      "triangle*0.35: C5 .15, E5 .15, G5 .15, C6 .6",
+    "night":     "sine*0.4: A4>G4 .3, - .12, A4>F4 .5",
+    "camp":      "noise*0.2: C6>C7 .12, - .04, C6>C7 .18",
+    "camera":    "noise*0.3: 9000 .012 + noise*0.25: - .07, 6000 .02",
+    "teleport":  "sine*0.5: C4>C7 .4 + square*0.12: G4>G7 .4",
+    "trip":      "saw*0.3: C4>G4 .2, G4>D4 .2, D4>A4 .2, A4>C4 .35",
+    "friend":    "triangle*0.5: E5 .08, G5 .18",
+    "blip":      "triangle*0.4: C6 .06, G6 .1",
+    # effects play these with game.cue(...)
+    "quack":     "saw*0.35: E4>C4 .09, - .05, E4>C4 .13",
+    "honk":      "square*0.35: A3>F3 .18, - .06, A3>E3 .25",
+    "clack":     "noise*0.35: E6 .02, - .07, C6 .02",
+    "bell":      ("sine*0.3: E6 .3 + sine*0.15: E6 .8 + sine*0.1: E6 1.4"
+                  " + sine*0.12: G6 .6 + sine*0.08: B6 .4 + sine*0.06: E7 .2"),
+    "whoosh":    "noise*0.25: C4>C8 .45",
+    "drizzle":   "noise*0.12: C8 .5, D8 .4",
+    "paper":     "noise*0.2: G6 .04, - .03, A6 .05, - .02, F6 .04",
+    "fanfare":   "square*0.25: C5 .1, E5 .1, G5 .1, C6 .4",
+    "tick":      "square*0.2: C6 .02, - .15, G5 .02, - .15, C6 .02",
+}
+
+# MUSIC -- generated ambient loops, picked by mood.
+#   scale   the notes the melody wanders over
+#   drone   low notes held underneath       wave    the melody's wave
+#   beat    seconds per step                notes   how often a step plays (0-1)
+#   legato  how long notes ring (0-1)       echo    how much echo (0-0.8)
+#   melody  melody volume (default 0.5)     hum     drone volume (default 0.35)
+MUSIC = {
+    "day":   {"wave": "triangle", "scale": "C4 D4 E4 G4 A4 C5 D5 E5", "drone": "C3 G3",
+              "beat": 0.45, "notes": 0.5, "legato": 0.7, "echo": 0.25},
+    "snow":  {"wave": "sine", "scale": "E5 F#5 A5 B5 D6 E6", "drone": "E3 B3",
+              "beat": 0.7, "notes": 0.35, "legato": 0.35, "echo": 0.45},
+    "night": {"wave": "sine", "scale": "A3 C4 D4 E4 G4 A4", "drone": "A2 E3",
+              "beat": 0.8, "notes": 0.3, "legato": 0.9, "echo": 0.35},
+    "cave":  {"wave": "sine", "scale": "D5 F5 A5 C6 D6 F6", "drone": "D3 A3",
+              "beat": 0.9, "notes": 0.2, "legato": 0.15, "echo": 0.55},
+    "trip":  {"wave": "triangle", "scale": "C4 D4 E4 F#4 G#4 A#4 C5", "drone": "C3 F#3",
+              "melody": 0.35, "beat": 0.25, "notes": 0.8, "legato": 0.6, "echo": 0.4},
+}
+
+
+# --------------------------------------------------------------------------
 # EFFECTS -- functions a discovery can trigger. Each takes the game.
-# Handy game methods:  game.say(text)   game.teleport(dx, dy)
+# Handy game methods:  game.say(text)   game.teleport(dx, dy)   game.cue(sound)
 #   game.pass_time(turns)   game.add_companion(glyph, color, name)
 #   game.trip(turns)   game.x / game.y / game.turn / game.day_length
 #   game.underground   game.camp (x, y)   game.companions (list of dicts)
@@ -592,6 +656,7 @@ def fx_teleport(game):
 
 def fx_nightfall(game):
     game.pass_time(game.day_length // 2)
+    game.cue("whoosh")
     game.say("You blink. Hours have passed.")
 
 
@@ -602,17 +667,20 @@ def fx_trip(game):
 
 def fx_pet_rock(game):
     if game.add_companion("o", "grey", "Gerald"):
+        game.cue("clack")
         game.say("A small rock starts following you. You name it Gerald.")
 
 
 def fx_duck(game):
     if game.add_companion("d", "yellow", "A duck"):
+        game.cue("quack")
         game.say("A duck falls in line behind you. It has chosen you.")
 
 
 def fx_tiny_cloud(game):
     if not game.add_companion("&", "white", "A very small cloud"):
         return  # add_companion already explained that the cloud declined
+    game.cue("drizzle")
     if game.underground:
         game.say("The cloud bumps along the cave ceiling behind you. It has never been indoors before.")
     else:
@@ -627,6 +695,7 @@ def fx_camp_compass(game):
         game.say("The needle points at your feet. Camp is already here. The compass seems relieved.")
         return
     game.camp = (game.x, game.y)
+    game.cue("tick")
     game.say("The needle points firmly at your feet. Fine. Camp is here now.")
 
 
@@ -641,6 +710,7 @@ def fx_exact_map(game):
             if n]
     route = ", then ".join(legs) or "nowhere at all"
     game.pass_time(abs(dx) + abs(dy))
+    game.cue("paper")
     if was_underground:
         game.say(f"You follow the map up and out: {route}. You arrive, more or less.")
     else:
@@ -652,6 +722,7 @@ def fx_goose(game):
         game.say("A goose looks you over, finds nothing to take, and leaves a note: 'TRAVEL LIGHTER. -G'")
         return
     pal = game.companions.pop(random.randrange(len(game.companions)))
+    game.cue("honk")
     name = pal.get("name") if isinstance(pal, dict) else None
     game.say(f"{name or 'Someone'} is led away by a goose. The goose leaves a note: 'BORROWED. -G'")
 
@@ -662,6 +733,7 @@ def fx_dawn_bell(game):
         game.say("You ring the bell. It is already dawn, so the sun just nods at you.")
         return
     game.pass_time(game.day_length - into_day)
+    game.cue("bell")
     if game.underground:
         game.say("The bell rings. Far overhead, you somehow know, the sun is scrambling up.")
     else:
@@ -676,6 +748,7 @@ def fx_naming_hat(game):
              "Dame Pebble", "Captain Snack", "Moss", "Doug", "Parsnip", "Lady Fog", "Waffles",
              "Old Tom"]
     picks = random.sample(names, min(len(names), len(game.companions)))
+    game.cue("fanfare")
     for i, pal in enumerate(game.companions):
         if isinstance(pal, dict):
             pal["name"] = picks[i % len(picks)]
