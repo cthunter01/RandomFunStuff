@@ -1,3 +1,10 @@
+# The Prompt
+```
+Create a wxWidgets C++ Game of Life application. Architect it in a clean and modular manner that makes study of the code easy, as well as extensibility easy. Document using doxygen, but don't be overly
+  verbose. Keep documentation straightforward and to the point, and only when necessary. Use modern C++ (C++23), and CMake as the build system. Static link wxWidgets into the binary. To start, the world where
+  the cells live should be scalable. Each cell should be displayed in a scalable way, from 1x1 pixel all the way to 100x100 pixels. The speed of the game should be configurable. The area where the cells live
+  should be configurable (e.g. 100x100 cells, or 1000 x 1000 cells, or any other arbitrary dimension within reasonable hardware limits.)
+```
 # wxLife
 
 wxLife is Conway's Game of Life for Linux, written in C++23 with a wxWidgets 3.2 (GTK 3) interface. It
