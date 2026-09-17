@@ -18,13 +18,19 @@ Quick recipes
 * New abandoned structure: add a dict to STRUCTURES with some ASCII art.
   Art legend:  '#' wall   '.' floor   '+' door   '?' a discovery spot
                ' ' (space) = leave the natural terrain alone
-               '`' = blank ground (e.g. inside a sign, so no trees grow there)
+               '`' = empty space that's part of the structure (e.g. a sign's background)
                any other character is drawn as-is and you can walk on it.
   Optional "oddities": ["...", "..."] gives its '?' spots their own texts.
   Keep it under ~40x40 and make sure every '?' can be walked to.
 
 * New ambient message: add a line to AMBIENT under a terrain name.
   Messages can be long-ish; they wrap onto two lines (~150 characters max).
+
+* Tile looks (the colored look; g switches looks in the game): TILES gives
+  each terrain its (symbols, symbol color, ground color), colors as
+  (red, green, blue). Stick to single-width symbols: no emoji.
+  A structure can pick its wall lines with "walls": "light", "rounded",
+  "double" or "heavy".
 
 * New sound: add a recipe to SOUNDS (the format is explained there), then
   play it from an effect with game.cue("quack"), or give a discovery its own
@@ -81,6 +87,49 @@ TERRAIN = {
     "found":      tile("!", "dark_grey", "something you already found"),
 }
 
+# --------------------------------------------------------------------------
+# TILES -- the colored look: (symbols, symbol color, ground color).
+# Colors are (red, green, blue), 0-255. A symbol is picked per spot, so
+# repeat one to make it more common. For structure pieces (and the art's
+# decorations), a None symbol color means "the structure's color" and a None
+# ground means "its floor"; elsewhere a None ground means "whatever ground is
+# underneath".
+# --------------------------------------------------------------------------
+TILES = {
+    # overworld
+    "deep_water": ("≋≈", (70, 120, 210), (12, 32, 88)),
+    "water":      ("≈~ ", (140, 190, 245), (28, 70, 140)),
+    "river":      ("≈~", (170, 220, 255), (35, 95, 165)),
+    "sand":       ("·· ", (215, 195, 140), (150, 128, 78)),
+    "meadow":     ("·  , '  · ✿", (150, 210, 110), (48, 100, 40)),
+    "woods":      ("♣ · ", (80, 170, 70), (40, 88, 34)),
+    "forest":     ("♣♠♣", (45, 130, 55), (20, 58, 24)),
+    "swamp":      ("ψ\"·", (150, 160, 80), (48, 62, 34)),
+    "scrub":      ("· ;", (205, 175, 110), (120, 98, 55)),
+    "tundra":     ("· °", (240, 245, 250), (150, 162, 170)),
+    "taiga":      ("♠♠ ", (215, 240, 245), (38, 72, 62)),
+    "hills":      ("∩◠ ", (190, 150, 95), (92, 74, 44)),
+    "mountain":   ("▴▴∩", (190, 190, 195), (78, 78, 86)),
+    "peak":       ("▲", (255, 255, 255), (140, 142, 152)),
+    "cave":       ("Ω", (255, 175, 70), (30, 22, 16)),
+    # underground
+    "cave_wall":  ("▓", (92, 86, 78), (34, 31, 28)),
+    "cave_floor": ("·  ·  ,", (125, 118, 108), (26, 24, 22)),
+    "cave_exit":  ("<", (255, 225, 130), (70, 58, 34)),
+    "crystal":    ("◊⁕", (130, 235, 245), None),
+    "mushrooms":  ("φ", (200, 120, 255), None),
+    "cave_pool":  ("≈", (95, 145, 225), (16, 34, 78)),
+    # structure pieces (walls are drawn as joined lines)
+    "wall":       ("#", None, None),
+    "rubble":     ("░▒", None, None),
+    "floor":      ("·", (150, 125, 90), None),
+    "door":       ("+", None, None),
+    # discoveries
+    "oddity":     ("?", (255, 110, 255), (70, 20, 80)),
+    "found":      ("!", (175, 150, 180), (52, 38, 58)),
+}
+
+
 # Which terrains count as "land" that discoveries can appear on.
 LAND = {"sand", "meadow", "woods", "forest", "swamp", "scrub",
         "tundra", "taiga", "hills", "mountain"}
@@ -94,6 +143,7 @@ LAND = {"sand", "meadow", "woods", "forest", "swamp", "scrub",
 STRUCTURES = [
     {
         "name": "abandoned cabin",
+        "walls": "rounded",
         "biomes": {"woods", "forest", "taiga", "meadow"},
         "color": "brown",
         "decay": 0.15,
@@ -128,6 +178,7 @@ o       o
     },
     {
         "name": "ruined watchtower",
+        "walls": "double",
         "biomes": {"hills", "mountain", "scrub"},
         "color": "grey",
         "decay": 0.3,
@@ -197,6 +248,7 @@ _/_|?|_\\_
     },
     {
         "name": "boarded-up mine",
+        "walls": "heavy",
         "biomes": {"mountain", "hills", "tundra"},
         "color": "orange",
         "decay": 0.2,
@@ -260,6 +312,7 @@ _/_|?|_\\_
     },
     {
         "name": "shuttered diner",
+        "walls": "double",
         "biomes": {"scrub", "sand", "meadow"},
         "color": "pink",
         "decay": 0.1,
@@ -303,6 +356,7 @@ _/_|?|_\\_
     },
     {
         "name": "lighthouse",
+        "walls": "heavy",
         "biomes": {"sand"},
         "color": "red",
         "decay": 0.15,
@@ -326,6 +380,7 @@ _/_|?|_\\_
     },
     {
         "name": "mossy playground",
+        "walls": "rounded",
         "biomes": {"woods", "swamp", "meadow"},
         "color": "cyan",
         "decay": 0.25,
@@ -350,6 +405,7 @@ _/_|?|_\\_
     },
     {
         "name": "ranger station",
+        "walls": "rounded",
         "biomes": {"forest", "taiga", "woods"},
         "color": "olive",
         "decay": 0.1,
@@ -374,6 +430,7 @@ _/_|?|_\\_
     },
     {
         "name": "crashed satellite",
+        "walls": "heavy",
         "biomes": {"mountain", "hills", "scrub"},
         "color": "grey",
         "decay": 0.05,
@@ -420,6 +477,7 @@ _/_|?|_\\_
     },
     {
         "name": "hallway to nowhere",
+        "walls": "double",
         "biomes": {"forest", "swamp", "taiga"},
         "color": "purple",
         "decay": 0.2,

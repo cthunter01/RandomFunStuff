@@ -7,6 +7,7 @@ explore.py -- wander an endless ASCII wilderness.
     python3 explore.py --seed 42       a specific world (resumes it if you've been there)
     python3 explore.py --postcard      print a view of the world and exit
     python3 explore.py --mute          no sound this time (M toggles it in the game)
+    python3 explore.py --ascii         plain ASCII this time (g toggles it in the game)
 """
 
 import argparse
@@ -20,6 +21,7 @@ import sys
 import time
 
 import content
+import graphics
 import sound
 import worldgen
 
@@ -328,7 +330,7 @@ def a_or_an(name):
 
 
 FOUND_CELL = ("found", content.TERRAIN["found"]["glyphs"][0],
-              content.TERRAIN["found"]["color"], None)
+              content.TERRAIN["found"]["color"], None, content.TILES["found"][0][0])
 
 
 def save_path(seed):
@@ -344,12 +346,16 @@ def save_game(game):
 
 
 def load_settings():
+    settings = {"sound": True, "graphics": "tiles"}
     try:
         with open(os.path.join(SAVE_DIR, "settings.json")) as f:
             saved = json.load(f)
-        return {"sound": bool(saved.get("sound", True))}
+        settings["sound"] = bool(saved.get("sound", True))
+        if saved.get("graphics") in ("tiles", "ascii"):
+            settings["graphics"] = saved["graphics"]
     except (OSError, ValueError, AttributeError):
-        return {"sound": True}
+        pass
+    return settings
 
 
 def save_settings(settings):
@@ -407,51 +413,10 @@ def load_game(seed=None, new=False, peek=False):
 # --------------------------------------------------------------------------
 # drawing
 # --------------------------------------------------------------------------
-# name: (256-color index, 8-color fallback, extra attr for 8-color terminals)
-PALETTE = {
-    "green": (70, curses.COLOR_GREEN, 0),
-    "dark_green": (28, curses.COLOR_GREEN, 0),
-    "olive": (100, curses.COLOR_YELLOW, 0),
-    "blue": (33, curses.COLOR_BLUE, curses.A_BOLD),
-    "dark_blue": (25, curses.COLOR_BLUE, 0),
-    "cyan": (80, curses.COLOR_CYAN, 0),
-    "sand": (180, curses.COLOR_YELLOW, 0),
-    "yellow": (220, curses.COLOR_YELLOW, curses.A_BOLD),
-    "orange": (208, curses.COLOR_YELLOW, 0),
-    "brown": (130, curses.COLOR_RED, 0),
-    "red": (160, curses.COLOR_RED, curses.A_BOLD),
-    "pink": (211, curses.COLOR_MAGENTA, 0),
-    "magenta": (201, curses.COLOR_MAGENTA, curses.A_BOLD),
-    "purple": (135, curses.COLOR_MAGENTA, 0),
-    "grey": (248, curses.COLOR_WHITE, 0),
-    "dark_grey": (240, curses.COLOR_WHITE, curses.A_DIM),
-    "white": (231, curses.COLOR_WHITE, curses.A_BOLD),
-}
-TRIP_COLORS = ["red", "orange", "yellow", "green", "cyan", "blue", "purple", "magenta", "pink"]
+PALETTE = graphics.PALETTE
 MAP_GLYPH = {k: max(t["glyphs"], key=t["glyphs"].count) for k, t in content.TERRAIN.items()}
 MAP_GLYPH.update(woods="t", scrub=";")   # tell same-colored biomes apart on the map
-
-
-class Colors:
-    def __init__(self):
-        self.attrs = {}
-        if not curses.has_colors():
-            return
-        curses.start_color()
-        try:
-            curses.use_default_colors()
-            bg = -1
-        except curses.error:
-            bg = curses.COLOR_BLACK
-        rich = 256 <= curses.COLORS < 1 << 24   # truecolor terminals misread 256-color numbers
-        for i, (name, (c256, c8, extra)) in enumerate(PALETTE.items(), start=1):
-            if i >= curses.COLOR_PAIRS:
-                break
-            curses.init_pair(i, c256 if rich else c8, bg)
-            self.attrs[name] = curses.color_pair(i) | (0 if rich else extra)
-
-    def __call__(self, name):
-        return self.attrs.get(name, 0)
+MSG_ROWS = 3
 
 
 def put(scr, y, x, text, attr=0):
@@ -464,12 +429,30 @@ def put(scr, y, x, text, attr=0):
             pass  # writing the bottom-right cell always "fails"; it still draws
 
 
-MSG_ROWS = 3
+class Row:
+    """Collects one screen row and draws it in as few pieces as possible."""
+
+    def __init__(self):
+        self.chunks, self.run, self.attr, self.x = [], [], None, 0
+
+    def add(self, col, glyph, attr):
+        if attr != self.attr:
+            if self.run:
+                self.chunks.append((self.x, "".join(self.run), self.attr))
+            self.run, self.attr, self.x = [], attr, col
+        self.run.append(glyph)
+
+    def draw(self, scr, y):
+        if self.run:
+            self.chunks.append((self.x, "".join(self.run), self.attr))
+        for x, text, attr in self.chunks:
+            put(scr, y, x, text, attr)
 
 
-def draw(scr, game, colors, fresh=1):
+def draw(scr, game, look, fresh=1):
     """fresh = how many of the latest messages are new since the last keypress."""
     scr.erase()
+    look.new_frame()
     H, W = scr.getmaxyx()
     if H < 8 or W < 30:
         put(scr, 0, 0, "Embiggen your terminal!", curses.A_BOLD)
@@ -477,55 +460,10 @@ def draw(scr, game, colors, fresh=1):
     map_h = H - 1 - MSG_ROWS
     left = game.x - W // 2
     top = game.y - map_h // 2
-    radius = game.sight_radius()
-    fade = (radius * 0.7) ** 2 if radius else None   # the dim outer ring of your torch/night vision
-    faded = colors("dark_grey")
-    tripping = game.tripping()
-
-    overlay = {}
-    for pal, spot in zip(game.companions, game.trail):
-        overlay[spot] = (pal["glyph"], colors(pal["color"]) | curses.A_BOLD)
-    overlay[(game.x, game.y)] = ("@", curses.A_BOLD | curses.A_REVERSE)
-
-    seen_now = []
-    for row in range(map_h):
-        wy = top + row
-        chunks, run, run_attr, run_x = [], [], None, 0
-        for col in range(W):
-            wx = left + col
-            if (wx, wy) in overlay:
-                glyph, attr = overlay[(wx, wy)]
-            else:
-                dist2 = 0
-                if radius is not None:
-                    ddx = (wx - game.x) * 0.5   # terminal cells are ~2x taller than wide
-                    ddy = wy - game.y
-                    dist2 = ddx * ddx + ddy * ddy
-                if radius is None or dist2 < radius * radius:
-                    cell = game.cell_at(wx, wy)
-                    glyph = cell[1]
-                    if tripping:
-                        attr = colors(TRIP_COLORS[(wx + wy + game.turn) % len(TRIP_COLORS)])
-                    elif fade and dist2 >= fade and cell[0] not in ("oddity", "cave", "cave_exit"):
-                        attr = faded
-                    else:
-                        attr = colors(cell[2])
-                    if game.underground:
-                        seen_now.append((wx, wy))
-                elif game.remembered(wx, wy):
-                    glyph, attr = game.cell_at(wx, wy)[1], faded
-                else:
-                    glyph, attr = " ", 0
-            if attr != run_attr:
-                if run:
-                    chunks.append((run_x, "".join(run), run_attr))
-                run, run_attr, run_x = [], attr, col
-            run.append(glyph)
-        if run:
-            chunks.append((run_x, "".join(run), run_attr))
-        for x, text, attr in chunks:
-            put(scr, row + 1, x, text, attr)
-    game.remember(seen_now)
+    if look.tiles:
+        draw_tiles(scr, game, look, W, map_h, left, top)
+    else:
+        draw_ascii(scr, game, look, W, map_h, left, top)
 
     sx, sy = game.where()[1]
     parts = [f" Day {game.day}, {game.time_of_day()}", game.place_name(), game.camp_bearing(),
@@ -554,6 +492,101 @@ def draw(scr, game, colors, fresh=1):
         rows[-1] = (rows[-1][0][:W - 6] + "...", rows[-1][1])
     for r, (line, attr) in enumerate(rows):
         put(scr, H - len(rows) + r, 1, line, attr)
+
+
+def draw_ascii(scr, game, look, W, map_h, left, top):
+    radius = game.sight_radius()
+    fade = (radius * 0.7) ** 2 if radius else None   # the dim outer ring of your torch/night vision
+    faded = look("dark_grey")
+    tripping = game.tripping()
+
+    overlay = {}
+    for pal, spot in zip(game.companions, game.trail):
+        overlay[spot] = (pal["glyph"], look(pal["color"]) | curses.A_BOLD)
+    overlay[(game.x, game.y)] = ("@", curses.A_BOLD | curses.A_REVERSE)
+
+    seen_now = []
+    for row in range(map_h):
+        wy = top + row
+        line = Row()
+        for col in range(W):
+            wx = left + col
+            if (wx, wy) in overlay:
+                glyph, attr = overlay[(wx, wy)]
+            else:
+                dist2 = 0
+                if radius is not None:
+                    ddx = (wx - game.x) * 0.5   # terminal cells are ~2x taller than wide
+                    ddy = wy - game.y
+                    dist2 = ddx * ddx + ddy * ddy
+                if radius is None or dist2 < radius * radius:
+                    cell = game.cell_at(wx, wy)
+                    glyph = cell[1]
+                    if tripping:
+                        attr = look(graphics.TRIP_COLORS[(wx + wy + game.turn) % len(graphics.TRIP_COLORS)])
+                    elif fade and dist2 >= fade and cell[0] not in ("oddity", "cave", "cave_exit"):
+                        attr = faded
+                    else:
+                        attr = look(cell[2])
+                    if game.underground:
+                        seen_now.append((wx, wy))
+                elif game.remembered(wx, wy):
+                    glyph, attr = game.cell_at(wx, wy)[1], faded
+                else:
+                    glyph, attr = " ", 0
+            line.add(col, glyph, attr)
+        line.draw(scr, row + 1)
+    game.remember(seen_now)
+
+
+def draw_tiles(scr, game, look, W, map_h, left, top):
+    light = graphics.Light(game)
+    lighting = light.preset if look.grounds else None
+    tripping = game.tripping()
+    under = game.underground
+    pals = {spot: pal for pal, spot in zip(game.companions, game.trail)}
+    me_glyph, me_ink, me_ground = graphics.PLAYER
+    me = look.paint(me_ink, me_ground) | curses.A_BOLD | (0 if look.grounds else curses.A_REVERSE)
+
+    seen_now = []
+    for row in range(map_h):
+        wy = top + row
+        line = Row()
+        for col in range(W):
+            wx = left + col
+            if wx == game.x and wy == game.y:
+                line.add(col, me_glyph, me)
+                continue
+            level = graphics.STEPS
+            if light.radius is not None:
+                ddx = (wx - game.x) * 0.5   # terminal cells are ~2x taller than wide
+                ddy = wy - game.y
+                level = light.level(ddx * ddx + ddy * ddy)
+            if level:
+                glyph, ink, ground = graphics.tile_parts(game, wx, wy, game.cell_at(wx, wy))
+                if under:
+                    seen_now.append((wx, wy))
+            elif under and game.remembered(wx, wy):
+                glyph, ink, ground = graphics.tile_parts(game, wx, wy, game.cell_at(wx, wy))
+            elif not under and look.grounds:   # in the dark you still make out the land
+                glyph, ink, ground = graphics.silhouette(game, wx, wy, game.raw_cell(wx, wy))
+            else:   # darkness: black underground, the terminal's own background elsewhere
+                line.add(col, " ", look.paint((0, 0, 0), (0, 0, 0)) if under and look.grounds else 0)
+                continue
+            pal = pals.get((wx, wy))
+            if pal:   # companions get a dark badge in their own color, like yours
+                glyph, ink = pal["glyph"], graphics.rgb_of(pal["color"])
+                ground = graphics.floor_ground(pal["color"])
+            if tripping:
+                attr = look.paint(graphics.trip_rgb(wx, wy, game.turn),
+                                  graphics.trip_ground(wx, wy, game.turn))
+            else:
+                attr = look.paint(ink, ground, level, lighting)
+                if not level and not look.grounds:   # remembered cave cells, few colors
+                    attr |= curses.A_DIM
+            line.add(col, glyph, attr | curses.A_BOLD if pal else attr)
+        line.draw(scr, row + 1)
+    game.remember(seen_now)
 
 
 def wrap(lines, width):
@@ -592,44 +625,48 @@ def pager(scr, title, lines):
             return
 
 
-def show_map(scr, game, colors):
+def show_map(scr, game, look):
     zooms = [2, 4, 8, 16]
     zi = 1
     cache = game.world.map_cache
     ox, oy = game.where()[1]
+
+    def terrain(x, y):
+        kind = cache.get((x, y))
+        if kind is None:
+            kind = cache[(x, y)] = game.world.base_terrain(x, y)
+        return kind
+
     while True:
         z = zooms[zi]
         H, W = scr.getmaxyx()
         map_h = max(1, H - 2)
-        if len(cache) > max(70000, 4 * W * H):
+        if len(cache) > max(70000, 8 * W * H):
             cache.clear()
         scr.erase()
+        look.new_frame()
         put(scr, 0, 0, f" Map: 1 char = {z}x{z * 2} steps | +/- zoom | any other key closes ".ljust(W),
             curses.A_REVERSE)
         put(scr, H - 1, 1, "@ you   X camp", curses.A_DIM)
         cx, cy = ox - ox % z, oy - oy % (z * 2)
         for row in range(map_h):
-            chunks, run, run_attr, run_x = [], [], None, 0
+            line = Row()
             for col in range(W):
                 wx = cx + (col - W // 2) * z
                 wy = cy + (row - map_h // 2) * z * 2
-                kind = cache.get((wx, wy))
-                if kind is None:
-                    kind = cache[(wx, wy)] = game.world.base_terrain(wx, wy)
-                glyph, attr = MAP_GLYPH[kind], colors(content.TERRAIN[kind]["color"])
-                if attr != run_attr:
-                    if run:
-                        chunks.append((run_x, "".join(run), run_attr))
-                    run, run_attr, run_x = [], attr, col
-                run.append(glyph)
-            if run:
-                chunks.append((run_x, "".join(run), run_attr))
-            for x, text, attr in chunks:
-                put(scr, row + 1, x, text, attr)
+                kind = terrain(wx, wy)
+                if look.grounds:   # two "pixels" per character: top half and bottom half
+                    below = terrain(wx, wy + z)
+                    line.add(col, "▀", look.paint(graphics.map_rgb(kind), graphics.map_rgb(below)))
+                else:
+                    line.add(col, MAP_GLYPH[kind], look(content.TERRAIN[kind]["color"]))
+            line.draw(scr, row + 1)
         camp_col = W // 2 + (game.camp[0] - cx) // z
         camp_row = map_h // 2 + (game.camp[1] - cy) // (z * 2)
         if 0 <= camp_row < map_h:
-            put(scr, camp_row + 1, camp_col, "X", colors("red") | curses.A_BOLD)
+            camp = look.paint((255, 90, 90), graphics.map_rgb(terrain(*game.camp))) \
+                if look.grounds else look("red")
+            put(scr, camp_row + 1, camp_col, "X", camp | curses.A_BOLD)
         put(scr, map_h // 2 + 1 + (oy - cy) // (z * 2), W // 2 + (ox - cx) // z, "@",
             curses.A_BOLD | curses.A_REVERSE)
         scr.refresh()
@@ -644,24 +681,32 @@ def show_map(scr, game, colors):
             return
 
 
-def postcard_lines(game, width=72, height=24):
+def postcard_lines(game, width=72, height=24, tiles=False):
     left, top = game.x - width // 2, game.y - height // 2
     rows = []
     for j in range(height):
-        rows.append("".join("@" if (left + i, top + j) == (game.x, game.y)
-                            else game.cell_at(left + i, top + j)[1] for i in range(width)))
+        row = []
+        for i in range(width):
+            x, y = left + i, top + j
+            if (x, y) == (game.x, game.y):
+                row.append("@")
+            else:
+                cell = game.cell_at(x, y)
+                row.append(graphics.tile_parts(game, x, y, cell)[0] if tiles else cell[1])
+        rows.append("".join(row))
     sx, sy = game.where()[1]
     title = f" Greetings from the {game.place_name()}! (world {game.seed}, {sx},{sy}, day {game.day}) "
-    border = "+" + "-" * width + "+"
-    return [title, border] + ["|" + r + "|" for r in rows] + [border]
+    h, v, tl, tr, bl, br = ("─", "│", "╭", "╮", "╰", "╯") if tiles else ("-", "|", "+", "+", "+", "+")
+    return [title, tl + h * width + tr] + [v + r + v for r in rows] + [bl + h * width + br]
 
 
-def write_postcard(game):
+def write_postcard(game, tiles=False):
     os.makedirs(POSTCARD_DIR, exist_ok=True)
     sx, sy = game.where()[1]
-    path = os.path.join(POSTCARD_DIR, f"world{game.seed}_{sx}_{sy}_day{game.day}_t{game.turn}.txt")
-    with open(path, "w") as f:
-        f.write("\n".join(postcard_lines(game)) + "\n")
+    name = f"world{game.seed}_{sx}_{sy}_day{game.day}_t{game.turn}{'' if tiles else '_ascii'}.txt"
+    path = os.path.join(POSTCARD_DIR, name)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(postcard_lines(game, tiles=tiles)) + "\n")
     return os.path.relpath(path, HERE)
 
 
@@ -722,30 +767,53 @@ def toggle_sound(game, audio, settings):
                  "(pw-play, paplay, aplay, afplay, ffplay or mpv).")
 
 
-HELP = [
-    "Wander. Look at things. That's the game.",
-    "",
-    "move          arrows, WASD, or hjkl",
-    "run           shift + arrow, or W A S D / H J K L in capitals",
-    "              (stops at new sights and at edges like shores and rivers)",
-    "wait          space or .",
-    "sleep         z   (until dawn)",
-    "make camp     c   (the status bar points you back to it)",
-    "map           m   (+/- to zoom)",
-    "notebook      n   (everything you've found)",
-    "sound         M   (on/off; remembered for next time)",
-    "postcard      p   (saves a postcard of where you are to postcards/)",
-    "caves         walk onto an O (or press > while on one) to go in;",
-    "              stand on the < and press < to climb out",
-    "quit          q   (your wander is saved automatically)",
-    "",
-    "?  something odd - walk onto it        O  cave mouth",
-    "!  something you already found         <  the way out of a cave",
-    "#  walls (ruins)                       A  jagged peaks",
-    "~  water (dark blue lakes are too deep to wade)",
-    "",
-    "Want more weirdness? Everything silly lives in content.py.",
-]
+def toggle_graphics(game, look, settings):
+    if not look.tiles and not graphics.unicode_ok():
+        game.say("Tiles need a UTF-8 terminal with a full font (not the Linux console or a "
+                 "CJK locale), so it's plain ASCII here.")
+        return
+    look.tiles = not look.tiles
+    settings["graphics"] = "tiles" if look.tiles else "ascii"
+    save_settings(settings)
+    if not look.tiles:
+        game.say("Plain ASCII. (g brings the tiles back.)")
+    elif look.depth < 256:
+        game.say("Tiles on, but this terminal has only a few colors, so no colored ground.")
+    else:
+        game.say("Colored tiles.")
+
+
+def help_lines(look):
+    def g(kind):
+        ascii_glyph = content.TERRAIN[kind]["glyphs"][0]
+        return graphics.fancy_glyph(kind, ascii_glyph) if look.tiles else ascii_glyph
+
+    return [
+        "Wander. Look at things. That's the game.",
+        "",
+        "move          arrows, WASD, or hjkl",
+        "run           shift + arrow, or W A S D / H J K L in capitals",
+        "              (stops at new sights and at edges like shores and rivers)",
+        "wait          space or .",
+        "sleep         z   (until dawn)",
+        "make camp     c   (the status bar points you back to it)",
+        "map           m   (+/- to zoom)",
+        "notebook      n   (everything you've found)",
+        "sound         M   (on/off; remembered for next time)",
+        "graphics      g   (colored tiles or plain ASCII; remembered)",
+        "postcard      p   (saves a postcard of where you are to postcards/)",
+        f"caves         walk onto an {g('cave')} (or press > while on one) to go in;",
+        "              stand on the < and press < to climb out",
+        "quit          q   (your wander is saved automatically)",
+        "",
+        f"{g('oddity')}  something odd - walk onto it        {g('cave')}  cave mouth",
+        f"{g('found')}  something you already found         {g('cave_exit')}  the way out of a cave",
+        f"{'║' if look.tiles else '#'}  walls (ruins)                       {g('peak')}  jagged peaks",
+        f"{g('deep_water')}  water (dark blue lakes are too deep to wade)",
+        "Want more weirdness? Everything silly lives in content.py.",
+    ]
+
+
 
 
 def interesting_nearby(game):
@@ -822,17 +890,17 @@ def drain_input(scr):
     return seq
 
 
-def play(scr, game, audio=None, settings=None):
+def play(scr, game, audio=None, settings=None, tiles=False):
     try:
         curses.curs_set(0)
     except curses.error:
         pass
     scr.keypad(True)
-    colors = Colors()
+    look = graphics.Look(tiles=tiles)
     last_save = time.monotonic()
     fresh = 1
     reported = None
-    settings = settings if settings is not None else {"sound": True}
+    settings = settings if settings is not None else {"sound": True, "graphics": "tiles"}
     try:
         while True:
             play_cues(game, audio)
@@ -841,7 +909,7 @@ def play(scr, game, audio=None, settings=None):
                 if reported:
                     game.say(reported)
                     fresh = 1
-            draw(scr, game, colors, fresh)
+            draw(scr, game, look, fresh)
             scr.refresh()
             k = scr.getch()
             said, added, turn = game.said, game.message_count, game.turn
@@ -872,7 +940,7 @@ def play(scr, game, audio=None, settings=None):
                     game.tick()
                 else:
                     game.say("You're already as far down as this cave goes." if game.underground
-                             else "There's no way down here. Find an O.")
+                             else "There's no way down here. Find a cave mouth.")
             elif k in (ord(" "), ord(".")):
                 game.rest()
             elif k == ord("z"):
@@ -880,21 +948,23 @@ def play(scr, game, audio=None, settings=None):
             elif k == ord("c"):
                 game.make_camp()
             elif k == ord("m"):
-                show_map(scr, game, colors)
+                show_map(scr, game, look)
             elif k == ord("n"):
                 n = len(game.journal)
                 pager(scr, f"Notebook ({n} entr{'y' if n == 1 else 'ies'}, newest first)",
                       list(reversed(game.journal)) or ["Nothing yet. Go look at things."])
             elif k == ord("M") and audio:
                 toggle_sound(game, audio, settings)
+            elif k == ord("g"):
+                toggle_graphics(game, look, settings)
             elif k == ord("p"):
                 try:
-                    game.say(f"Postcard saved to {write_postcard(game)}")
+                    game.say(f"Postcard saved to {write_postcard(game, look.tiles)}")
                     game.cue("camera")
                 except OSError as err:
                     game.say(f"The postcard blew away ({err.strerror}).")
             elif k == ord("?"):
-                pager(scr, "Help", HELP)
+                pager(scr, "Help", help_lines(look))
             if game.said != said or game.turn != turn:
                 fresh = max(game.message_count - added, int(game.said != said))
             if time.monotonic() - last_save > 30:
@@ -912,7 +982,11 @@ def main(argv=None):
     ap.add_argument("--at", metavar="X,Y", help="with --postcard: where to look")
     ap.add_argument("--size", default="72x24", metavar="WxH", help="with --postcard: view size")
     ap.add_argument("--mute", action="store_true", help="no sound this time (M toggles it in the game)")
+    ap.add_argument("--ascii", action="store_true",
+                    help="plain ASCII this time (g toggles it in the game)")
     args = ap.parse_args(argv)
+    settings = load_settings()
+    tiles = settings["graphics"] == "tiles" and not args.ascii
 
     if args.postcard:
         game = load_game(args.seed, args.new, peek=True)
@@ -925,12 +999,14 @@ def main(argv=None):
             ap.error("--at wants X,Y and --size wants WIDTHxHEIGHT, e.g. --at 10,-40 --size 80x30")
         if not (0 < width <= 1000 and 0 < height <= 1000) or max(abs(game.x), abs(game.y)) > 10**15:
             ap.error("--size goes up to 1000x1000 and --at up to 10**15 in each direction")
-        print("\n".join(postcard_lines(game, width, height)))
+        utf8 = (sys.stdout.encoding or "").lower().replace("-", "") == "utf8"
+        print("\n".join(postcard_lines(game, width, height, tiles and utf8)))
         return 0
 
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         print("This needs a real terminal. (Try --postcard for a non-interactive peek.)")
         return 1
+    graphics.use_truecolor_if_possible()
     try:
         curses.setupterm()
     except curses.error:
@@ -949,11 +1025,10 @@ def main(argv=None):
 
     for sig in signals:
         signal.signal(sig, quit_now)
-    settings = load_settings()
     audio = sound.Sound(content.SOUNDS, content.MUSIC, SOUND_CACHE,
                         enabled=settings["sound"] and not args.mute)
     try:
-        curses.wrapper(play, game, audio, settings)
+        curses.wrapper(play, game, audio, settings, tiles and graphics.unicode_ok())
     finally:
         try:
             save_game(game)

@@ -4,9 +4,11 @@ worldgen.py -- deterministic, endless world generation.
 The same seed always makes the same world. Nothing here knows about the
 screen or the player; it just answers "what is at (x, y)?".
 
-A cell is a tuple: (kind, glyph, color, oddity_index)
+A cell is a tuple: (kind, glyph, color, oddity_index, tile_glyph)
   kind          -- a key of content.TERRAIN, or "deco" for structure decoration
+  glyph, color  -- how it looks in plain ASCII
   oddity_index  -- index into ODDITIES for '?' cells, otherwise None
+  tile_glyph    -- how it looks in the colored look (content.TILES)
 """
 
 import math
@@ -260,7 +262,11 @@ class World:
         if glyph is None:
             glyphs = TERRAIN[kind]["glyphs"]
             glyph = glyphs[hash2(x, y, self.seed, 3) % len(glyphs)]
-        cell = (kind, glyph, color or TERRAIN[kind]["color"], oddity)
+            fancy = content.TILES.get(kind, (glyphs,))[0]
+            fancy = fancy[hash2(x, y, self.seed, 4) % len(fancy)]
+        else:
+            fancy = glyph
+        cell = (kind, glyph, color or TERRAIN[kind]["color"], oddity, fancy)
         return self._intern.setdefault(cell, cell)
 
     def _natural_cell(self, x, y, kind):
@@ -336,6 +342,7 @@ class World:
                     cell = self._make("deco", x, y, color=color, glyph=ch)
                 cells[(x, y)] = cell
         return {"name": spec["name"], "text": spec.get("text", ""), "id": (x0, y0),
+                "walls": spec.get("walls", "light"),
                 "x0": x0, "y0": y0, "x1": x0 + p["w"], "y1": y0 + p["h"], "cells": cells}
 
     def structure_at(self, x, y):

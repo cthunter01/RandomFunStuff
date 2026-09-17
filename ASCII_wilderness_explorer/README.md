@@ -33,6 +33,7 @@ python3 explore.py --new      # a brand new random world
 python3 explore.py --seed 42  # visit world 42 (resumes it if you've been there)
 python3 explore.py --postcard --seed 42 --at 300,-200 --size 100x30   # peek without playing
 python3 explore.py --mute     # no sound this time
+python3 explore.py --ascii    # plain ASCII this time
 ```
 
 Needs Python 3.8+ and nothing else (sound uses your system's audio player if it has one). On Windows, run `pip install windows-curses` first.
@@ -51,12 +52,31 @@ Needs Python 3.8+ and nothing else (sound uses your system's audio player if it 
 | `p` | save a postcard of the view to `postcards/` |
 | `<` / `>` | climb out of a cave (stand on the `<`) / go into one (stand on an `O`) |
 | `M` | sound on/off (remembered for next time) |
+| `g` | colored tiles or plain ASCII (remembered for next time) |
 | `?` | help |
 | `q` | quit (your game saves automatically to `saves/`) |
 
-In the world: `?` is something odd (walk onto it), `O` is a cave mouth (walk in),
-`<` leads out of a cave, `!` is something you've already found, `A` is an
-impassable peak, and dark blue `~` lakes are too deep to wade.
+In the world: `?` is something odd (walk onto it), `O` (`Ω` in tiles) is a cave
+mouth (walk in), `<` leads out of a cave, `!` is something you've already found,
+`A` (`▲` on grey) is an impassable peak, and dark blue lakes are too deep to wade.
+The help screen (`?`) shows the symbols for whichever look is on.
+
+## Looks
+
+On a UTF-8 terminal the world is drawn as colored tiles: Unicode symbols
+(`♣ ♠ ▲ ∩ ≋ Ω`) on colored ground, walls that join up (`╔═╗`), moonlit nights
+with a glow around you, a torch-lit underground, and a pixel map (`m`).
+Press `g` for the plain ASCII look instead; it's also used automatically on
+terminals that aren't UTF-8.
+
+On terminals that advertise truecolor (`COLORTERM=truecolor`, e.g. Konsole,
+GNOME Terminal, kitty, WezTerm), the game uses exact colors; elsewhere the
+nearest of the 256 standard colors (which has few muted greens and browns, so
+land looks greyer). If colors look wrong, run with `WILDERNESS_COLORS=256`.
+Inside tmux or screen it sticks to 256 colors; if yours passes truecolor
+through, `WILDERNESS_COLORS=truecolor` gives the full look. The Linux text
+console always gets plain ASCII, since its fonts lack most of the symbols.
+If some symbols show as boxes, your font is missing them: press `g`.
 
 ## Sound
 
@@ -84,6 +104,9 @@ All the flavor lives in **`content.py`**, and the recipes are at the top of that
   land alone, `` ` `` is blank ground, and any other character is walkable
   decoration.
 - **Ambient chatter:** add lines to `AMBIENT` under a terrain name.
+- **Tile looks:** `TILES` gives each terrain its symbols, symbol color and
+  ground color, like `"forest": ("♣♠♣", (45, 130, 55), (20, 58, 24))`.
+  Structures can pick `"walls": "light"`, `"rounded"`, `"double"` or `"heavy"`.
 - **A sound:** add a recipe to `SOUNDS`, like
   `"quack": "saw*0.35: E4>C4 .09, - .05, E4>C4 .13"` (wave, then notes and
   seconds; `>` slides, `-` pauses). Play it from an effect with
@@ -93,7 +116,8 @@ All the flavor lives in **`content.py`**, and the recipes are at the top of that
   `STRUCTURE_CHANCE` at the top of `worldgen.py`.
 
 After adding things, run `python3 -m pytest -q`. The tests catch typos in biome
-names, missing effect functions, and structures whose `?` spots are walled in.
+names, missing effect functions, structures whose `?` spots are walled in, and
+tile symbols that would be two cells wide.
 
 ## How it works
 
@@ -102,6 +126,7 @@ names, missing effect functions, and structures whose `?` spots are walled in.
   generated in 32x32 chunks as you walk; climate is sampled every 4 cells and
   blended, which keeps each step fast. Each 48x48 region may hold one
   structure, and each cave mouth leads to its own small cellular-automata cave.
-- `explore.py` holds the game rules and the curses UI.
+- `explore.py` holds the game rules and the curses UI; `graphics.py` handles
+  the two looks (colors, tiles, joined walls, light and shadow).
 - `sound.py` synthesizes and plays sounds; the game itself only asks for them by name.
 - `content.py` holds all the silly stuff.

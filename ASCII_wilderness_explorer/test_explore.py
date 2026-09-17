@@ -13,6 +13,7 @@ import pytest
 
 import content
 import explore
+import graphics
 import worldgen
 
 TERRAIN_KINDS = set(content.TERRAIN)
@@ -226,17 +227,18 @@ class FakeScreen:
         assert 0 <= y < self.h and 0 <= x and x + len(text) <= self.w
 
 
+@pytest.mark.parametrize("tiles", [False, True], ids=["ascii", "tiles"])
 @pytest.mark.parametrize("size", [(80, 24), (250, 70), (30, 8), (10, 3)])
-def test_draw_at_any_size(size):
+def test_draw_at_any_size(size, tiles):
     game = explore.Game(6)
     screen = FakeScreen(*size)
-    no_colors = lambda name: 0  # noqa: E731
-    explore.draw(screen, game, no_colors)
+    look = graphics.Look(tiles=tiles, ready=False)
+    explore.draw(screen, game, look)
     game.pass_time(explore.DAY_LENGTH * 0.7)
-    explore.draw(screen, game, no_colors)
+    explore.draw(screen, game, look)
     ex, ey = _cave_mouths(game.world, 1)[0]
     game.enter_cave(ex, ey)
-    explore.draw(screen, game, no_colors)
+    explore.draw(screen, game, look)
 
 
 def test_structure_oddities_stay_in_their_structure():

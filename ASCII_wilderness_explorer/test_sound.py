@@ -186,19 +186,19 @@ def test_music_follows_the_game():
 
 def test_sound_setting_is_remembered(tmp_path, monkeypatch):
     monkeypatch.setattr(explore, "SAVE_DIR", str(tmp_path))
-    assert explore.load_settings() == {"sound": True}
+    assert explore.load_settings()["sound"] is True
     audio = make(tmp_path, QUIET)
     game = explore.Game(3)
     settings = explore.load_settings()
     explore.toggle_sound(game, audio, settings)
-    assert not audio.enabled and explore.load_settings() == {"sound": False}
+    assert not audio.enabled and explore.load_settings()["sound"] is False
     assert game.messages[-1].startswith("Sound off")
     explore.toggle_sound(game, audio, settings)
-    assert audio.enabled and explore.load_settings() == {"sound": True}
+    assert audio.enabled and explore.load_settings()["sound"] is True
     assert "blip" in game.cues
     audio.close()
     (tmp_path / "settings.json").write_text("[not, json")
-    assert explore.load_settings() == {"sound": True}
+    assert explore.load_settings() == {"sound": True, "graphics": "tiles"}
 
 
 def test_a_broken_recipe_is_reported_not_fatal(tmp_path):
