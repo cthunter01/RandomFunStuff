@@ -9,14 +9,21 @@ Create a wxWidgets C++ Game of Life application. Architect it in a clean and mod
 
 wxLife is Conway's Game of Life for Linux, written in C++23 with a wxWidgets 3.2 (GTK 3) interface. It
 runs Conway's Life and any other two-state B/S rule on worlds with sides of up to 100,000 cells, as far
-as a memory budget allows, with wrapping or dead edges. The code is split into small layers so it is easy
-to study and extend. A 1000 × 1000 world runs smoothly at every zoom level, and a 10000 × 10000 world
-stays usable. [docs/architecture.md](docs/architecture.md) explains the design.
+as a memory budget allows, with wrapping or dead edges, and it also runs Langton's ant on the same
+worlds. The code is split into small layers so it is easy to study and extend. A 1000 × 1000 world runs
+smoothly at every zoom level, and a 10000 × 10000 world stays usable.
+[docs/architecture.md](docs/architecture.md) explains the design.
 
 ## Features
 
 - Any B/S rule (`B3/S23`, `B36/S23`, `B/S`, …) plus ten presets: Conway's Life, HighLife, Seeds,
   Day & Night, Life without Death, Maze, 2x2, Replicator, Diamoeba and Morley.
+- **Langton's ant** as a second automaton, chosen in Simulation → Automaton or in the side panel. Each
+  ant turns right on a dead cell and left on a live one, flips the cell and steps forward; a generation
+  is one move for every ant. Up to 64 ants share a world and move in order, so each one sees what the
+  ones before it have just left. An ant always wraps at the edges, whatever the world's own edges do, so
+  Wrap Edges, the rule and the engine are greyed out while it runs. Ants are placed with Edit → Reset
+  Ants, with the panel's Ants box, or one at a time with Ctrl+left click.
 - Worlds from 1 × 1 cell to 100,000 cells per side. A memory budget (a quarter of the RAM, at most
   16 GiB) limits the total, so a square world has at most about 92,000 cells per side. Edges either wrap
   (a torus) or are dead.
@@ -160,6 +167,7 @@ Ctrl+Delete (in a number box, Ctrl+Home sets the smallest value).
 | Left press and drag | Draw. Starting on a live cell erases instead. |
 | Right press and drag | Erase |
 | Middle drag, or Shift + left drag | Pan |
+| Ctrl + left click | Add an ant, or take away the one already there (Langton's ant only) |
 | Wheel | Scroll up and down |
 | Shift + wheel, or a horizontal wheel or touchpad swipe | Scroll left and right |
 | Ctrl + wheel | Zoom one step per notch, keeping the cell under the pointer in place |
@@ -198,9 +206,11 @@ triggered by accident.
 | F6 | Simulation → Step |
 | Ctrl+] / Ctrl+[ | Simulation → Faster / Slower |
 | Ctrl+M | Simulation → Max Speed |
+| none | Simulation → Automaton → Life / Langton's Ant |
 | none | Simulation → Engine → Banded / Reference |
 | Ctrl+Delete | Edit → Clear |
 | Ctrl+R | Edit → Randomize (at the panel's density) |
+| none | Edit → Reset Ants (back to their starting spots) |
 | Ctrl+L | Edit → Edit Rule… (moves the focus to the rule box) |
 | Ctrl+N | World → Size… |
 | Ctrl+T | World → Wrap Edges |
@@ -212,9 +222,14 @@ triggered by accident.
 | Ctrl+Q | File → Quit |
 
 The panel on the left has the same actions, plus:
+- the automaton to run, and how many ants it gets (1–64) with a Reset button beside it;
 - the random-fill density (1–100%);
 - an exact speed box and an exact cell-size box;
 - a rule box: type a rule and press Enter, or click Apply.
+
+Whichever automaton is running greys out what only the other one uses, so a control that would do
+nothing is visibly dead: Langton's ant disables the Rule group, Wrap Edges and the Engine submenu, and
+Life disables the ant count and Reset Ants.
 
 A rule the app cannot read shows an error below the box, and the current rule stays in effect. The mouse
 wheel changes a slider, a number box or the preset list only while that control has the focus. Over an
@@ -237,7 +252,7 @@ becomes a redraw, and where to extend the code), read [docs/architecture.md](doc
 ## Configuration notes
 
 wxLife has no settings file. The start-up values are in `src/ui/Defaults.hpp`: a 512 × 512 world with
-wrapping edges and Conway's rule, 25% random fill, 30 generations per second, and paused.
+wrapping edges and Conway's rule, 25% random fill, one ant, 30 generations per second, and paused.
 
 - **World size.** Each side can be 1 to 100,000 cells.
   - A world needs 2 × (width + 2) × (height + 2) bytes. For example, 1000² needs 1.9 MiB, 10000² needs
@@ -250,7 +265,12 @@ wrapping edges and Conway's rule, 25% random fill, 30 generations per second, an
   - During a resize the old and the new world exist at the same time.
   - "Keep the current pattern" keeps the pattern centred.
 - **Engine.** The Reference engine can be chosen only for worlds of up to 1,000,000 cells. Resizing to
-  a larger world switches back to Banded.
+  a larger world switches back to Banded. Only Life uses an engine at all.
+- **Langton's ant.** A world carries 0 to 64 ants. Switching to the ant seeds one in the middle;
+  more of them are spread evenly along the middle row, all facing north. Clear, Randomize and a resize
+  that keeps nothing put them back on those spots, because generation 0 means the ants have not moved
+  yet; a resize that keeps the pattern moves them with it and pulls a cropped one back inside. The
+  ants survive a switch to Life and back, and they always wrap at the edges whatever the topology says.
 - **Speed.**
   - The target is 1 to 1000 generations per second, or Max.
   - The slider is logarithmic, and the box next to it takes any exact value.
@@ -316,6 +336,11 @@ mouse handling. Before a release, check these by hand, on X11 and on Wayland:
 - [ ] Enter a bad rule (for example `B9`): an error appears, and the old rule keeps running. Choosing a
       preset clears the error.
 - [ ] Switch the engine to Reference and back. Reference is greyed out above 1,000,000 cells.
+- [ ] Switch to Langton's ant, Clear, then Run at max speed: the ant is chaotic for about ten thousand
+      generations and then builds a straight highway. The Rule group, Wrap Edges and the Engine submenu
+      are greyed out while it runs.
+- [ ] Ctrl+click the world in ant mode: an ant appears and the ant count follows; Ctrl+click it again
+      and the ant goes away. Neither click draws a cell, and a plain left drag still draws.
 - [ ] Click the rule box: the menu shortcuts (F5, Ctrl+R, Ctrl+M, …) still work, plain keys type text,
       and Ctrl+Delete deletes text there.
 - [ ] Click Randomize, then press Space: the simulation runs. Ctrl+Home on the world centres the view.

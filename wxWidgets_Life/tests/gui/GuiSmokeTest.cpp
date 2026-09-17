@@ -10,6 +10,7 @@
 // configured but cannot be opened fails every test. Paints are checked only while the display draws
 // windows, which a locked or switched-off screen may not do.
 
+#include "core/Ant.hpp"
 #include "core/Format.hpp"
 #include "core/Rule.hpp"
 #include "core/Speed.hpp"
@@ -350,6 +351,7 @@ void mouse(wxWindow& target, wxEventType type, wxPoint at, int modifiers = wxMOD
     wxMouseEvent event(type);
     event.SetPosition(at);
     event.SetShiftDown((modifiers & wxMOD_SHIFT) != 0);
+    event.SetControlDown((modifiers & wxMOD_CONTROL) != 0);
     deliver(target, event);
 }
 
@@ -574,6 +576,12 @@ TEST_F(GuiSmokeTest, OpensPausedWithARandomWorldFitted)
     EXPECT_TRUE(menuItem(ID_ENGINE_REFERENCE).IsEnabled());
     EXPECT_TRUE(menuItem(ID_TOGGLE_WRAP).IsChecked());
     EXPECT_TRUE(menuItem(ID_TOGGLE_GRID).IsChecked());
+
+    // Life runs until the user asks for the other automaton, and it has no ants.
+    EXPECT_EQ(world_.automaton(), core::Automaton::Life);
+    EXPECT_TRUE(world_.ants().empty());
+    EXPECT_TRUE(menuItem(ID_AUTOMATON_LIFE).IsChecked());
+    EXPECT_FALSE(menuItem(ID_RESET_ANTS).IsEnabled());
 }
 
 TEST_F(GuiSmokeTest, RunsPausesAndSteps)
@@ -1028,6 +1036,87 @@ TEST_F(GuiSmokeTest, SwitchesEngines)
     command(ID_STEP);
     EXPECT_EQ(world_.generation(), 3u);   // the engine switch keeps the state
     EXPECT_EQ(world_.population(), countedPopulation());
+}
+
+TEST_F(GuiSmokeTest, SwitchesAutomata)
+{
+    command(ID_AUTOMATON_ANT);
+    EXPECT_EQ(world_.automaton(), core::Automaton::LangtonAnt);
+    EXPECT_TRUE(menuItem(ID_AUTOMATON_ANT).IsChecked());
+    ASSERT_EQ(world_.ants().size(), 1u);   // switching over puts one ant in the middle
+    EXPECT_EQ(world_.ants()[0], core::defaultAnt(0, 1, world_.extent()));
+    EXPECT_EQ(status(kWorld), "512 × 512 · Langton's ant · 1 ant");
+
+    // The ant reads no rule, no topology and no engine, so all three are greyed out.
+    EXPECT_FALSE(menuItem(ID_TOGGLE_WRAP).IsEnabled());
+    EXPECT_FALSE(menuItem(ID_FOCUS_RULE).IsEnabled());
+    EXPECT_FALSE(menuItem(ID_ENGINE_BANDED).IsEnabled());
+    EXPECT_FALSE(menuItem(ID_ENGINE_REFERENCE).IsEnabled());
+    EXPECT_TRUE(menuItem(ID_RESET_ANTS).IsEnabled());
+    EXPECT_FALSE(labelled<wxCheckBox>(*panel_, "Wrap edges").IsEnabled());
+    EXPECT_FALSE(group("Rule").IsEnabled());
+
+    const core::CellCount before = world_.population();
+    command(ID_STEP);
+    EXPECT_EQ(world_.generation(), 1u);
+    EXPECT_EQ(world_.population(), countedPopulation());
+    EXPECT_NE(world_.population(), before);   // the ant flipped the cell it stood on
+    EXPECT_NE(world_.ants()[0].position, core::defaultAnt(0, 1, world_.extent()).position);
+
+    command(ID_AUTOMATON_LIFE);
+    EXPECT_EQ(world_.automaton(), core::Automaton::Life);
+    EXPECT_TRUE(menuItem(ID_AUTOMATON_LIFE).IsChecked());
+    EXPECT_TRUE(status(kWorld).ends_with("· B3/S23 · Banded"));
+    EXPECT_TRUE(menuItem(ID_TOGGLE_WRAP).IsEnabled());
+    EXPECT_TRUE(menuItem(ID_ENGINE_BANDED).IsEnabled());
+    EXPECT_TRUE(group("Rule").IsEnabled());
+    command(ID_STEP);
+    EXPECT_EQ(world_.generation(), 2u);   // the switch keeps the state
+    EXPECT_EQ(world_.population(), countedPopulation());
+}
+
+TEST_F(GuiSmokeTest, PlacesAntsFromTheMenuAndWithCtrlClick)
+{
+    command(ID_AUTOMATON_ANT);
+    // The ant count is the group's second spin control; the first is the randomize density.
+    const std::vector<wxSpinCtrl*> spins = all<wxSpinCtrl>(group("Simulation"));
+    ASSERT_EQ(spins.size(), 2u);
+    wxSpinCtrl& antCount = *spins.at(1);
+
+    type(antCount, 3);
+    ASSERT_EQ(world_.ants().size(), 3u);
+    for (std::size_t i = 0; i < 3; ++i)
+        EXPECT_EQ(world_.ants()[i], core::defaultAnt(static_cast<int>(i), 3, world_.extent())) << "ant " << i;
+    EXPECT_EQ(status(kWorld), "512 × 512 · Langton's ant · 3 ants");
+
+    command(ID_STEP);
+    EXPECT_NE(world_.ants()[0], core::defaultAnt(0, 3, world_.extent()));
+    command(ID_RESET_ANTS);   // Edit -> Reset Ants puts them back without changing how many there are
+    ASSERT_EQ(world_.ants().size(), 3u);
+    EXPECT_EQ(world_.ants()[0], core::defaultAnt(0, 3, world_.extent()));
+
+    // Ctrl+left click adds an ant where it points and never draws a cell. The ants share the middle row,
+    // so a cell below it is free and the click adds one instead of taking that one away.
+    const wxPoint at = canvasCentre() + wxPoint(0, 40);
+    const std::optional<core::CellPos> cell = pointAt(at);
+    ASSERT_TRUE(cell.has_value());
+    ASSERT_FALSE(
+        std::ranges::any_of(world_.ants(), [&](const core::Ant& ant) { return ant.position == *cell; }));
+    const core::CellCount population = world_.population();
+    mouse(*canvas_, wxEVT_LEFT_DOWN, at, wxMOD_CONTROL);
+    mouse(*canvas_, wxEVT_LEFT_UP, at, wxMOD_CONTROL);
+    ASSERT_EQ(world_.ants().size(), 4u);
+    EXPECT_EQ(world_.ants()[3], (core::Ant{*cell, core::Heading::North}));
+    EXPECT_EQ(world_.population(), population);   // no stroke was drawn
+    EXPECT_EQ(wxWindow::GetCapture(), nullptr);   // and no drag was started
+    EXPECT_EQ(antCount.GetValue(), 4);            // the panel follows the model
+    EXPECT_EQ(status(kWorld), "512 × 512 · Langton's ant · 4 ants");
+
+    // Clicking the same cell again takes it away.
+    mouse(*canvas_, wxEVT_LEFT_DOWN, at, wxMOD_CONTROL);
+    mouse(*canvas_, wxEVT_LEFT_UP, at, wxMOD_CONTROL);
+    EXPECT_EQ(world_.ants().size(), 3u);
+    EXPECT_EQ(world_.population(), population);
 }
 
 TEST_F(GuiSmokeTest, ResizesTheWorldThroughTheSizeDialog)

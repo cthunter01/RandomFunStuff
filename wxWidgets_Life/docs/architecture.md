@@ -26,7 +26,7 @@ All numbers below were measured on the development machine unless marked otherwi
 | render/  Types, Viewport, PixelBuffer, RenderStyle,                      |
 |          Rasterizer                                    lib wxlife_render |
 +--------------------------------------------------------------------------+
-| core/    Types, Line, Rule, Grid, Random, ParallelBands, Stepper,        |
+| core/    Types, Line, Rule, Ant, Grid, Random, ParallelBands, Stepper,   |
 |          ReferenceStepper, StepKernel, BandedStepper, World,             |
 |          WorldLimits, Speed, Pacer, Format   lib wxlife_core (+ Threads) |
 +--------------------------------------------------------------------------+
@@ -61,7 +61,7 @@ Every other place that shows one of these values is only a view of it.
 
 | State | Owner |
 |---|---|
-| Cells, rule, topology, engine, generation, population | `core::World`, held by `app::LifeApp` |
+| Cells, automaton, ants, rule, topology, engine, generation, population | `core::World`, held by `app::LifeApp` |
 | Running flag, speed, pacing, measured rate | `ui::SimulationRunner`, a member of `MainFrame` |
 | Cell size, scroll offset, grid-line flag, colours | `ui::WorldCanvas`, through `render::Viewport` and `render::RenderStyle` (colours from `ui/Theme.hpp`) |
 | Random-fill density, rule text being edited, preset selection | The `ui::ControlPanel` widgets |
@@ -117,6 +117,26 @@ applies to a cell with *n* live neighbours.
     one. This needs x86-64 and glibc (musl has no ifunc). With `WXLIFE_KERNEL_CLONES=OFF`, as in the
     `headless` preset, only the baseline version is built.
   - The file is compiled with `-O3` in every build type.
+
+**Automata.** `World::step()` switches on `Automaton`, and the switch has no `default`, so `-Wswitch`
+lists every place a third automaton would need.
+- **`Automaton::Life`** is the path above: refresh the border, run the stepper into `next_`, swap.
+- **`Automaton::LangtonAnt`** (`core/Ant.hpp`, header-only) moves each ant of `ants_` once, in index
+  order, straight on `current_`. There is no border to refresh and no buffer to swap, and each ant
+  therefore sees what the ones before it have just left. One move is: turn right on a dead cell or left
+  on a live one, flip that cell, step forward. `advance()` returns the ±1 the population changed by, so
+  the counter stays exact without a recount.
+- An ant **always wraps**, whatever `Topology` says, because an ant that walked off a bounded edge would
+  have to be deleted while a wrapped one keeps drawing. The UI therefore greys out Wrap Edges, the rule
+  and the engine while the ant runs, so no control silently means nothing.
+- `next_` is left allocated but idle in ant mode. It keeps `worldBytes()`, `validateExtent()` and
+  `resize()` untouched, so the memory budget does not move under the user when the automaton does.
+- Every ant is always inside the world. `setAnts()`, `resetAnts()`, `toggleAntAt()` and `resize()` are
+  the four places that keep it that way, and it is what makes `advance()`'s precondition hold. `World`
+  reserves room for `kMaxAnts` up front, so adding an ant never reallocates and `toggleAntAt()` is
+  `noexcept`.
+- Generation 0 means the ants have not moved yet, so `clear()`, `randomize()` and a `resize()` that
+  keeps nothing lay them out again.
 
 **Threads.** `forEachBand()` is the only code that creates threads.
 - Band 0 runs on the calling thread and the other bands on `std::jthread`s. A band whose thread cannot
@@ -264,11 +284,15 @@ timer tick → SimulationRunner::onTimer → pacer_.plan(now) → world_.step() 
 
 GTK frame clock → WorldCanvas::onPaint → syncCanvasSize()
   → Rasterizer::render(world.cells(), viewport, style, frame)
+  → in ant mode, render::drawAnts(world.ants(), viewport, style, frame) over it
   → wxImage (borrowed bytes) → wxBitmap(image, depth, scale) → DrawBitmap
 
 left drag → WorldCanvas::onMouse → continuePaint → Viewport::cellAtClamped → forEachCellOnLine
   → callbacks_.paintCells(segment, value) → MainFrame::onPaintCells → world_.setCells
   → worldContentChanged() → canvas_->Refresh(false) + updateStatusBar(true)
+
+Ctrl+left click → WorldCanvas::onMouse → callbacks_.toggleAnt(cell) → MainFrame::onToggleAnt
+  → world_.toggleAntAt(cell) → syncControls() (the panel's ant count follows) → worldContentChanged()
 
 Ctrl+wheel → WorldCanvas::onWheel → Viewport::zoomBy(steps, pointer) → cameraMoved()
   → viewportChanged() → syncScrollbars(), Refresh(false), callbacks_.viewChanged
@@ -412,8 +436,20 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
   - 1, 2, 7 and 64 bands (fewer when the world has fewer rows or cells).
   
   It also checks known patterns (still lifes, oscillators, gliders) with every engine in `kStepperKinds`.
+- **`AntTest`** checks Langton's ant on its own. Turning and stepping are `constexpr`, so their contract
+  (left undoes right, four rights are the identity, the clockwise order, and wrapping off each of the
+  four edges) is checked at compile time. The four moves that draw a 2 × 2 block and bring the ant back
+  are compared with text-art grids.
+- **`WorldTest`** covers the automaton in the model: one move per ant per generation, ants sharing a
+  grid in index order, wrapping under every topology, and what a switch, Clear, Randomize and a resize
+  do to them. `TheAntBuildsTheKnownHighway` is the property test: from an empty 128 × 128 world the ant
+  is chaotic for 9977 moves and then repeats the same 104 moves, each period two cells further down the
+  diagonal and twelve live cells heavier, with its whole neighbourhood a plain copy of the period
+  before. That one test pins the turn rule, the wrapping and the incremental population count together.
 - **`RasterizerTest`** compares every pixel with a small independent reference: every cell size from 1
-  to 100, and 1500 random scenes. Hand-drawn text-art frames cover the special cases.
+  to 100, and 1500 random scenes, each with up to three ants. The reference gains one branch for them —
+  an ant colours the body of its cell but never a grid line — so the overlay, its clipping and both
+  paint paths are covered by the same oracle. Hand-drawn text-art frames cover the special cases.
 - **`ViewportTest`** checks anchored zoom for every pair of zoom steps and every anchor position inside
   a cell against a floating-point reference, checks that zooming there and back restores the offset,
   and compares `cellAt` and `visibleCells` with brute-force results.
@@ -446,6 +482,7 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
 | Persistent thread pool | `forEachBand()` is the only code that creates threads | Replace its body; nothing else changes. A quick prototype pool stepped 1000² in 0.15 ms with 2 bands (0.38 ms with threads started per step) and in 0.09 ms with 4, so `suggestedBandCount()` could then split smaller worlds too. |
 | Background stepping (worlds of more than about 200 million cells on this machine) | `SimulationRunner` is the only caller of `World::step()`, and painting reads only `World::cells()` | Step a copy on a `std::jthread` and hand finished grids to the canvas. This stays inside `ui/`, plus a small `core` helper. |
 | Other rule families (Generations, Larger than Life) | Only the steppers interpret a `Rule`; the rest of the code only parses, prints and compares it. `Cell` is a byte. | Make `Rule` a `std::variant` and give each family its own stepper, plus a case in `Rule::toString()`, `findPreset()` and the preset list. The rasterizer would need colours for the extra states. |
+| More automata (other turmites, multi-state ants) | `Automaton`, `kAutomata` and the `default`-less switch in `World::step()`; `core/Ant.hpp` holds the ant's own rule | Add an enum value and a `kAutomata` entry; `-Wswitch` then points at the four switches that need a case: `toString(Automaton)`, `World::step()`, and `worldText()` and `automatonMenuItem()` in `MainFrame.cpp`. The panel's choice is built from `kAutomata`, so it needs no change. Multi-state cells would additionally break the binary assumptions listed in the row above. With a third automaton it is time to extract an interface from `World` instead of widening the switch. |
 | Other topologies (cylinder, Klein bottle) | `Topology` and `kTopologies`. `-Wswitch` lists the `core` code that needs a case: `toString(Topology)`, `Grid::updateBorder()` and the `alive` lambda in `ReferenceStepper::step()`. | Add an enum value, a `kTopologies` entry and a copy rule; `StepperTest` and `WorldTest` then cover it. The Wrap Edges toggle in `MainFrame` would become a choice. |
 | Sparse or infinite worlds, HashLife | The UI uses only `World`'s public interface | Extract an interface from `World` once a second implementation exists. `Rasterizer::render()` takes the dense `Grid` from `World::cells()`, so it would read cells through the new interface too. `Viewport` would need an unbounded extent. |
 | Zooming out below 1 px, a minimap | `Viewport` (`int` cell size) and `Rasterizer` | Replace the cell size with a scale type, and add a downsampling path. |
@@ -464,9 +501,10 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
 4. `core/StepKernel.cpp`: the only hot loop.
 5. `core/ParallelBands.hpp`, `core/BandedStepper.cpp`: the parallel bands.
 6. `core/World.hpp`, `core/World.cpp`: the model, its counters and its edits.
-7. `core/Pacer.hpp`, `core/Pacer.cpp`: turning wall time into generations.
-8. `render/Viewport.hpp`, `render/Viewport.cpp`: the camera, clamping and anchored zoom.
-9. `render/Rasterizer.cpp`: cell stamps and row copying.
-10. `ui/SimulationRunner.cpp`: the one-shot timer.
-11. `ui/WorldCanvas.cpp`: painting, scrollbars, mouse and keys.
-12. `ui/MainFrame.cpp`: the command table, syncing the controls, and the status bar.
+7. `core/Ant.hpp`: Langton's ant, and with it the other half of `World::step()`.
+8. `core/Pacer.hpp`, `core/Pacer.cpp`: turning wall time into generations.
+9. `render/Viewport.hpp`, `render/Viewport.cpp`: the camera, clamping and anchored zoom.
+10. `render/Rasterizer.cpp`: cell stamps and row copying.
+11. `ui/SimulationRunner.cpp`: the one-shot timer.
+12. `ui/WorldCanvas.cpp`: painting, scrollbars, mouse and keys.
+13. `ui/MainFrame.cpp`: the command table, syncing the controls, and the status bar.

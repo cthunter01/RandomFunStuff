@@ -150,6 +150,8 @@ void WorldCanvas::onPaint(wxPaintEvent&)
         CallAfter([this] { viewportChanged(); });
 
     rasterizer_.render(world_.cells(), viewport_, style_, frame_);
+    if (world_.automaton() == core::Automaton::LangtonAnt)
+        render::drawAnts(world_.ants(), viewport_, style_, frame_);
     const auto [width, height] = frame_.size();
     if (width <= 0 || height <= 0)
         return;
@@ -195,6 +197,10 @@ void WorldCanvas::onMouse(wxMouseEvent& event)
             drag_ = Drag::Pan;
             lastPanPoint_ = point;
             CaptureMouse();
+        } else if (button == wxMOUSE_BTN_LEFT && event.ControlDown()) {
+            // Places an ant instead of drawing, so no stroke starts and the mouse is not captured.
+            if (const std::optional<core::CellPos> cell = viewport_.cellAt(point))
+                callbacks_.toggleAnt(*cell);
         } else if (const std::optional<core::CellPos> cell = viewport_.cellAt(point)) {
             // Left toggles: pressing a live cell erases, pressing a dead one draws. Right always erases.
             const bool erase = button == wxMOUSE_BTN_RIGHT || world_.at(*cell) == core::kAlive;

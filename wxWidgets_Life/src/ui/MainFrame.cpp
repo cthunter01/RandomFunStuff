@@ -39,6 +39,7 @@ constexpr std::string_view kControlsHelp = R"(Mouse on the world
     Left drag: draw (starting on a live cell erases)
     Right drag: erase
     Middle drag or Shift+left drag: pan
+    Ctrl+left click: add or remove an ant (Langton's ant)
     Wheel: scroll (Shift: horizontally)
     Ctrl+wheel: zoom at the pointer
 
@@ -102,6 +103,37 @@ private:
     std::unreachable();
 }
 
+// The same for the Automaton menu, and likewise without a default.
+[[nodiscard]] constexpr CommandId automatonMenuItem(core::Automaton automaton) noexcept
+{
+    switch (automaton) {
+    case core::Automaton::Life:
+        return ID_AUTOMATON_LIFE;
+    case core::Automaton::LangtonAnt:
+        return ID_AUTOMATON_ANT;
+    }
+    std::unreachable();
+}
+
+// The world field of the status bar: what the running automaton actually uses. Life's text is also what
+// the GUI smoke test pins, so it must stay exactly as it is.
+[[nodiscard]] std::string worldText(const core::World& world)
+{
+    const core::Extent extent = world.extent();
+    const std::string size = std::format("{} × {}", countText(extent.width), countText(extent.height));
+    switch (world.automaton()) {
+    case core::Automaton::Life:
+        return std::format("{} · {} · {} · {}", size, core::toString(world.topology()),
+                           world.rule().toString(), core::toString(world.stepper().kind()));
+    case core::Automaton::LangtonAnt: {
+        const std::size_t ants = world.ants().size();
+        return std::format("{} · {} · {} ant{}", size, core::toString(world.automaton()), ants,
+                           ants == 1 ? "" : "s");
+    }
+    }
+    std::unreachable();
+}
+
 }
 
 MainFrame::MainFrame(core::World& world)
@@ -138,6 +170,7 @@ void MainFrame::buildLayout()
         {
             .paintCells = [this](std::span<const core::CellPos> cells,
                                  core::Cell value) { onPaintCells(cells, value); },
+            .toggleAnt = [this](core::CellPos cell) { onToggleAnt(cell); },
             .viewChanged = [this] { onViewChanged(); },
             .hoverChanged = [this](std::optional<core::CellPos> cell) { onHoverChanged(cell); },
         });
@@ -159,6 +192,10 @@ void MainFrame::bindCommands()
         {ID_SLOWER, &MainFrame::onSlower},
         {ID_TOGGLE_MAX_SPEED, &MainFrame::onToggleMaxSpeed},
         {ID_SPEED_CHANGED, &MainFrame::onSpeedChanged},
+        {ID_AUTOMATON_LIFE, &MainFrame::onAutomatonLife},
+        {ID_AUTOMATON_ANT, &MainFrame::onAutomatonAnt},
+        {ID_AUTOMATON_CHANGED, &MainFrame::onAutomatonChanged},
+        {ID_RESET_ANTS, &MainFrame::onResetAnts},
         {ID_ENGINE_BANDED, &MainFrame::onEngineBanded},
         {ID_ENGINE_REFERENCE, &MainFrame::onEngineReference},
         {ID_ZOOM_IN, &MainFrame::onZoomIn},
@@ -253,6 +290,28 @@ void MainFrame::onSpeedChanged()
     runner_.setSpeed(panel_->speed());
     syncControls();
     updateStatusBar(true);
+}
+
+void MainFrame::onAutomatonLife()
+{
+    setAutomaton(core::Automaton::Life);
+}
+
+void MainFrame::onAutomatonAnt()
+{
+    setAutomaton(core::Automaton::LangtonAnt);
+}
+
+void MainFrame::onAutomatonChanged()
+{
+    setAutomaton(panel_->selectedAutomaton());
+}
+
+void MainFrame::onResetAnts()
+{
+    world_.resetAnts(panel_->antCount());
+    syncControls();
+    worldContentChanged();
 }
 
 void MainFrame::onEngineBanded()
@@ -359,6 +418,8 @@ void MainFrame::onRulePreset()
 
 void MainFrame::onFocusRule()
 {
+    if (world_.automaton() != core::Automaton::Life)
+        return;   // the Rule group is greyed out, so there is nothing to focus
     panel_->focusRuleText();
 }
 
@@ -398,6 +459,15 @@ void MainFrame::onPaintCells(std::span<const core::CellPos> cells, core::Cell va
         worldContentChanged();
 }
 
+void MainFrame::onToggleAnt(core::CellPos cell)
+{
+    if (world_.automaton() != core::Automaton::LangtonAnt)
+        return;   // Ctrl+click means nothing to Life
+    world_.toggleAntAt(cell);
+    syncControls();   // the panel's ant count follows the model
+    worldContentChanged();
+}
+
 void MainFrame::onViewChanged()
 {
     panel_->setCellSize(canvas_->cellSize());
@@ -415,6 +485,13 @@ void MainFrame::applyRule(const core::Rule& rule)
     world_.setRule(rule);
     panel_->setRule(rule);
     updateStatusBar(true);
+}
+
+void MainFrame::setAutomaton(core::Automaton automaton)
+{
+    world_.setAutomaton(automaton);
+    syncControls();
+    worldContentChanged();   // the ants appear or disappear, so the canvas has to be redrawn
 }
 
 void MainFrame::setEngine(core::StepperKind kind)
@@ -437,9 +514,13 @@ void MainFrame::syncControls()
     const core::Speed speed = runner_.speed();
     const core::Extent extent = world_.extent();
     const bool torus = world_.topology() == core::Topology::Torus;
+    // Life reads the rule, the topology and the engine; the ant reads none of them and has ants instead.
+    const bool life = world_.automaton() == core::Automaton::Life;
 
     // The rule text is left alone, so text the user is still editing survives.
     panel_->setRunning(running);
+    panel_->setAutomaton(world_.automaton());
+    panel_->setAntCount(static_cast<int>(world_.ants().size()));
     panel_->setSpeed(speed);
     panel_->setCellSize(canvas_->cellSize());
     panel_->setShowGrid(canvas_->showGrid());
@@ -450,8 +531,14 @@ void MainFrame::syncControls()
     menus.Check(ID_TOGGLE_MAX_SPEED, speed.unlimited);
     menus.Check(ID_TOGGLE_GRID, canvas_->showGrid());
     menus.Check(ID_TOGGLE_WRAP, torus);
-    menus.Check(engineMenuItem(world_.stepper().kind()), true);   // radio items: the others turn off
-    menus.Enable(ID_ENGINE_REFERENCE, extent.cellCount() <= core::ReferenceStepper::kRecommendedMaxCells);
+    menus.Check(automatonMenuItem(world_.automaton()), true);   // radio items: the others turn off
+    menus.Check(engineMenuItem(world_.stepper().kind()), true);
+    menus.Enable(ID_ENGINE_BANDED, life);
+    menus.Enable(ID_ENGINE_REFERENCE,
+                 life && extent.cellCount() <= core::ReferenceStepper::kRecommendedMaxCells);
+    menus.Enable(ID_TOGGLE_WRAP, life);
+    menus.Enable(ID_FOCUS_RULE, life);
+    menus.Enable(ID_RESET_ANTS, !life);
     menus.SetLabel(ID_RUN_PAUSE, running ? "&Pause\tF5" : "&Run\tF5");
 }
 
@@ -464,7 +551,6 @@ void MainFrame::updateStatusBar(bool force)
 
     const bool running = runner_.isRunning();
     const core::Speed speed = runner_.speed();
-    const core::Extent extent = world_.extent();
     const int cellSize = canvas_->cellSize();
 
     std::string speedText = core::toString(speed);   // only the target until a rate has been measured
@@ -484,9 +570,7 @@ void MainFrame::updateStatusBar(bool force)
         std::format("Gen {}", core::formatCount(world_.generation())),
         std::format("Pop {}", countText(world_.population())),
         speedText,
-        std::format("{} × {} · {} · {} · {}", countText(extent.width), countText(extent.height),
-                    core::toString(world_.topology()), world_.rule().toString(),
-                    core::toString(world_.stepper().kind())),
+        worldText(world_),
         viewText,
     };
     // SetStatusText() ignores unchanged text, so rewriting every field is cheap.

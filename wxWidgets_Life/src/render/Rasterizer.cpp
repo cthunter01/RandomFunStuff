@@ -189,4 +189,31 @@ void Rasterizer::render(const core::Grid& grid, const Viewport& viewport, const 
     }
 }
 
+void drawAnts(std::span<const core::Ant> ants, const Viewport& viewport, const RenderStyle& style,
+              PixelBuffer& out)
+{
+    assert(out.size() == viewport.canvasSize());
+    const Layout layout = makeLayout(viewport, style);
+    if (layout.cells.empty())
+        return;
+    // The cell without its grid line, so an ant never paints over one.
+    const Pixel body = layout.gridLines ? layout.cellSize - 1 : layout.cellSize;
+
+    for (const core::Ant& ant : ants) {
+        const core::CellPos cell = ant.position;
+        if (cell.x < layout.cells.x0 || cell.x >= layout.cells.x1 || cell.y < layout.cells.y0 ||
+            cell.y >= layout.cells.y1)
+            continue;
+        // Only an ant at the edge of the view can stick out of the canvas.
+        const Pixel left = std::max<Pixel>(layout.cellLeft(cell.x), 0);
+        const Pixel right = std::min(layout.cellLeft(cell.x) + body, layout.canvas.width);
+        const Pixel top = std::max<Pixel>(layout.cellTop(cell.y), 0);
+        const Pixel bottom = std::min(layout.cellTop(cell.y) + body, layout.canvas.height);
+        if (left >= right || top >= bottom)   // nothing of its body is on the canvas
+            continue;
+        for (Pixel y = top; y < bottom; ++y)
+            fillPixels(pixels(out.row(y), left, right), style.ant);
+    }
+}
+
 }

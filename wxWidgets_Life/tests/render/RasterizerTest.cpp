@@ -1,5 +1,6 @@
 #include "render/Rasterizer.hpp"
 
+#include "core/Ant.hpp"
 #include "core/Grid.hpp"
 #include "core/Random.hpp"
 #include "core/Types.hpp"
@@ -9,6 +10,7 @@
 #include "render/Viewport.hpp"
 #include "support/AsciiGrid.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -19,6 +21,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace life::render {
 namespace {
@@ -34,7 +37,7 @@ std::string text(Rgb c)
     return std::format("#{:02X}{:02X}{:02X}", c.r, c.g, c.b);
 }
 
-// A frame as text, one letter per pixel: O alive, . dead, - grid line, = major grid line, # outside.
+// A frame as text, one letter per pixel: O alive, . dead, - grid line, = major grid line, # outside, A ant.
 std::string art(const PixelBuffer& frame, const RenderStyle& style)
 {
     const auto letter = [&style](Rgb c) {
@@ -48,6 +51,8 @@ std::string art(const PixelBuffer& frame, const RenderStyle& style)
             return '=';
         if (c == style.outside)
             return '#';
+        if (c == style.ant)
+            return 'A';
         return '?';
     };
     std::string text;
@@ -80,17 +85,20 @@ Viewport viewportFor(const Grid& grid, PixelSize canvas, int cellSize, PixelPoin
     return viewport;
 }
 
-PixelBuffer render(const Grid& grid, const Viewport& viewport, const RenderStyle& style)
+PixelBuffer render(const Grid& grid, const Viewport& viewport, const RenderStyle& style,
+                   std::span<const core::Ant> ants = {})
 {
     PixelBuffer frame;
     Rasterizer().render(grid, viewport, style, frame);
+    drawAnts(ants, viewport, style, frame);
     return frame;
 }
 
 // The colour of one canvas pixel, worked out from the definitions alone: the obviously correct,
 // slow version of Rasterizer. A grid line is the last pixel column or row of a cell; where lines
-// cross, a major line wins.
-Rgb referencePixel(const Grid& grid, const Viewport& viewport, const RenderStyle& style, Pixel x, Pixel y)
+// cross, a major line wins. An ant colours the body of the cell it stands on, but never a grid line.
+Rgb referencePixel(const Grid& grid, const Viewport& viewport, const RenderStyle& style, Pixel x, Pixel y,
+                   std::span<const core::Ant> ants = {})
 {
     const int size = viewport.cellSize();
     const Pixel contentX = viewport.offset().x + x;
@@ -113,12 +121,14 @@ Rgb referencePixel(const Grid& grid, const Viewport& viewport, const RenderStyle
             return style.gridLine;
     }
     const CellPos cell{static_cast<Coord>(cellX), static_cast<Coord>(cellY)};
+    if (std::ranges::any_of(ants, [cell](const core::Ant& ant) { return ant.position == cell; }))
+        return style.ant;
     return grid.at(cell) == core::kAlive ? style.alive : style.dead;
 }
 
 // Empty when `frame` is exactly the reference image, otherwise the first difference.
 std::string firstDifference(const PixelBuffer& frame, const Grid& grid, const Viewport& viewport,
-                            const RenderStyle& style)
+                            const RenderStyle& style, std::span<const core::Ant> ants = {})
 {
     const PixelSize canvas = viewport.canvasSize();
     if (frame.size() != canvas)
@@ -128,7 +138,7 @@ std::string firstDifference(const PixelBuffer& frame, const Grid& grid, const Vi
         return std::format("frame holds {} bytes", frame.bytes().size());
     for (Pixel y = 0; y < canvas.height; ++y) {
         for (Pixel x = 0; x < canvas.width; ++x) {
-            const Rgb want = referencePixel(grid, viewport, style, x, y);
+            const Rgb want = referencePixel(grid, viewport, style, x, y, ants);
             if (frame.at(x, y) != want)
                 return std::format("pixel ({}, {}) is {}, expected {}", x, y, text(frame.at(x, y)),
                                    text(want));
@@ -158,6 +168,7 @@ struct Scene {
     Grid grid;
     Viewport viewport;
     RenderStyle style;
+    std::vector<core::Ant> ants;
     std::string description;
 };
 
@@ -174,15 +185,27 @@ Scene randomScene(core::SplitMix64& rng)
     style.minCellSizeForGrid = std::array{1, 2, 5, 5, 5}[static_cast<std::size_t>(pick(rng, 0, 4))];
     style.majorGridEvery = std::array{0, 1, 2, 3, 10, 10}[static_cast<std::size_t>(pick(rng, 0, 5))];
 
-    Scene scene{.grid = randomGrid(rng, world), .viewport = {}, .style = style, .description = {}};
+    // A few ants, so every cell size, scroll position and clipping case covers the overlay too.
+    std::vector<core::Ant> ants;
+    if (world.width > 0 && world.height > 0) {
+        for (std::int64_t i = 0, count = pick(rng, 0, 3); i < count; ++i) {
+            ants.push_back({.position = {static_cast<Coord>(pick(rng, 0, world.width - 1)),
+                                         static_cast<Coord>(pick(rng, 0, world.height - 1))},
+                            .heading = core::Heading::North});
+        }
+    }
+
+    Scene scene{
+        .grid = randomGrid(rng, world), .viewport = {}, .style = style, .ants = ants, .description = {}};
     scene.viewport = viewportFor(scene.grid, canvas, cellSize,
                                  {pick(rng, -20, Pixel{world.width} * cellSize + 20),
                                   pick(rng, -20, Pixel{world.height} * cellSize + 20)});
     scene.description = std::format(
-        "world {}x{}, canvas {}x{}, cell {} px, offset ({}, {}), grid {} from {} px, major every {}",
+        "world {}x{}, canvas {}x{}, cell {} px, offset ({}, {}), grid {} from {} px, major every {}, "
+        "{} ants",
         world.width, world.height, canvas.width, canvas.height, cellSize, scene.viewport.offset().x,
         scene.viewport.offset().y, style.showGrid ? "on" : "off", style.minCellSizeForGrid,
-        style.majorGridEvery);
+        style.majorGridEvery, ants.size());
     return scene;
 }
 
@@ -479,10 +502,53 @@ TEST(RasterizerTest, EmptyWorldIsAllOutside)
     EXPECT_EQ(art(render(grid, viewportFor(grid, {4, 3}, 8), style), style), expected);
 }
 
+TEST(RasterizerTest, AntsFillTheirCellBodyButNotTheGridLine)
+{
+    const RenderStyle style = darkStyle();
+    const Grid grid = gridFromAscii({".O."});
+    // One ant on the live cell and one on the dead cell to its right; the cell left of them is untouched.
+    const std::vector<core::Ant> ants{{{1, 0}, core::Heading::North}, {{2, 0}, core::Heading::East}};
+
+    const std::string withLines = rows({
+        "....-AAAA-AAAA-",
+        "....-AAAA-AAAA-",
+        "....-AAAA-AAAA-",
+        "....-AAAA-AAAA-",
+        "---------------",
+    });
+    EXPECT_EQ(art(render(grid, viewportFor(grid, {15, 5}, 5), style, ants), style), withLines);
+
+    RenderStyle noGrid = style;
+    noGrid.showGrid = false;
+    const std::string withoutLines = rows({
+        ".....AAAAAAAAAA",
+        ".....AAAAAAAAAA",
+        ".....AAAAAAAAAA",
+        ".....AAAAAAAAAA",
+        ".....AAAAAAAAAA",
+    });
+    EXPECT_EQ(art(render(grid, viewportFor(grid, {15, 5}, 5), noGrid, ants), noGrid), withoutLines);
+}
+
+TEST(RasterizerTest, AntsOutsideTheViewAreSkipped)
+{
+    const RenderStyle style = darkStyle();
+    const Grid grid({20, 20});
+    const Viewport viewport = viewportFor(grid, {10, 10}, 2, {0, 0});   // shows cells (0, 0) to (4, 4)
+    const std::vector<core::Ant> ants{{{19, 19}, core::Heading::North}, {{2, 2}, core::Heading::North}};
+
+    const PixelBuffer frame = render(grid, viewport, style, ants);
+    EXPECT_EQ(firstDifference(frame, grid, viewport, style, ants), "");
+    EXPECT_EQ(std::ranges::count(art(frame, style), 'A'), 4);   // only the ant at (2, 2), 2 × 2 px
+}
+
 TEST(RasterizerTest, EveryCellSizeMatchesThePixelReference)
 {
     core::SplitMix64 rng(5);
     const Grid grid = randomGrid(rng, {23, 17});
+    // The corners and the middle, so ants are clipped at each canvas edge as the view scrolls.
+    const std::vector<core::Ant> kAnts{
+        {{0, 0}, core::Heading::North}, {{22, 16}, core::Heading::South}, {{11, 8}, core::Heading::East}};
     Rasterizer rasterizer;
     PixelBuffer frame;
     for (int cellSize = kMinCellSize; cellSize <= kMaxCellSize; ++cellSize) {
@@ -496,7 +562,8 @@ TEST(RasterizerTest, EveryCellSizeMatchesThePixelReference)
                 style.majorGridEvery = 4;
                 const Viewport viewport = viewportFor(grid, {157, 113}, cellSize, offset);
                 rasterizer.render(grid, viewport, style, frame);
-                ASSERT_EQ(firstDifference(frame, grid, viewport, style), "")
+                drawAnts(kAnts, viewport, style, frame);
+                ASSERT_EQ(firstDifference(frame, grid, viewport, style, kAnts), "")
                     << cellSize << " px, offset (" << viewport.offset().x << ", " << viewport.offset().y
                     << "), grid " << (showGrid ? "on" : "off");
             }
@@ -513,7 +580,8 @@ TEST(RasterizerTest, RandomScenesMatchThePixelReference)
     for (int i = 0; i < 1500; ++i) {
         const Scene scene = randomScene(rng);
         rasterizer.render(scene.grid, scene.viewport, scene.style, frame);
-        ASSERT_EQ(firstDifference(frame, scene.grid, scene.viewport, scene.style), "")
+        drawAnts(scene.ants, scene.viewport, scene.style, frame);
+        ASSERT_EQ(firstDifference(frame, scene.grid, scene.viewport, scene.style, scene.ants), "")
             << "scene " << i << ": " << scene.description;
     }
 }

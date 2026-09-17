@@ -40,6 +40,10 @@ private:
     void onSlower();
     void onToggleMaxSpeed();
     void onSpeedChanged();
+    void onAutomatonLife();
+    void onAutomatonAnt();
+    void onAutomatonChanged();
+    void onResetAnts();
     void onEngineBanded();
     void onEngineReference();
     void onZoomIn();
@@ -60,10 +64,12 @@ private:
     // Callbacks from the runner and the canvas.
     void onSimulationTick(const TickReport& report);
     void onPaintCells(std::span<const core::CellPos> cells, core::Cell value);
+    void onToggleAnt(core::CellPos cell);
     void onViewChanged();
     void onHoverChanged(std::optional<core::CellPos> cell);
 
     void applyRule(const core::Rule& rule);
+    void setAutomaton(core::Automaton automaton);
     void setEngine(core::StepperKind kind);
     void worldContentChanged();         ///< Refresh the canvas and force a status update after an edit.
     void syncControls();                ///< Panel values, menu check marks, enabled states and labels.

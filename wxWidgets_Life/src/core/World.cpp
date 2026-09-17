@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstddef>
 #include <utility>
+#include <vector>
 
 namespace life::core {
 
@@ -37,6 +38,8 @@ World::World(Extent extent, Rule rule, Topology topology)
     : current_(extent), next_(extent), rule_(rule), topology_(topology),
       stepper_(std::make_unique<BandedStepper>())
 {
+    // Room for every ant up front, so adding one later never reallocates and toggleAntAt() can be noexcept.
+    ants_.reserve(static_cast<std::size_t>(kMaxAnts));
 }
 
 Extent World::extent() const noexcept
@@ -64,6 +67,16 @@ Topology World::topology() const noexcept
     return topology_;
 }
 
+Automaton World::automaton() const noexcept
+{
+    return automaton_;
+}
+
+std::span<const Ant> World::ants() const noexcept
+{
+    return ants_;
+}
+
 const Stepper& World::stepper() const noexcept
 {
     return *stepper_;
@@ -81,9 +94,18 @@ CellCount World::population() const noexcept
 
 void World::step()
 {
-    current_.updateBorder(topology_);
-    population_ = stepper_->step(current_, next_, rule_, topology_);
-    std::swap(current_, next_);   // swaps the buffers, so no grid is allocated per step
+    switch (automaton_) {
+    case Automaton::Life:
+        current_.updateBorder(topology_);
+        population_ = stepper_->step(current_, next_, rule_, topology_);
+        std::swap(current_, next_);   // swaps the buffers, so no grid is allocated per step
+        break;
+    case Automaton::LangtonAnt:
+        // One move each, in index order over the one grid, so an ant sees what the ones before it left.
+        for (Ant& ant : ants_)
+            population_ += advance(ant, current_);
+        break;
+    }
     ++generation_;
 }
 
@@ -109,6 +131,7 @@ bool World::setCell(CellPos p, Cell value) noexcept
 void World::clear() noexcept
 {
     current_.clear();   // next_ is overwritten by the next step anyway
+    layOutAnts();       // generation 0 means the ants are back on their starting spots too
     generation_ = 0;
     population_ = 0;
 }
@@ -124,6 +147,7 @@ void World::randomize(double density, std::uint64_t seed)
             randomizeRow(current_.row(y), y, seed, threshold);
     });
     population_ = current_.countAlive();
+    layOutAnts();
     generation_ = 0;
 }
 
@@ -133,12 +157,13 @@ void World::resize(Extent newExtent, bool keepPattern)
     Grid current(newExtent);
     Grid next(newExtent);
 
+    // Offset of the old grid inside the new one; negative when shrinking. Division truncates toward
+    // zero, so growing and then shrinking back restores the original position.
+    const Extent old = extent();
+    const Coord dx = (newExtent.width - old.width) / 2;
+    const Coord dy = (newExtent.height - old.height) / 2;
+
     if (keepPattern) {
-        // Offset of the old grid inside the new one; negative when shrinking. Division truncates toward
-        // zero, so growing and then shrinking back restores the original position.
-        const Extent old = extent();
-        const Coord dx = (newExtent.width - old.width) / 2;
-        const Coord dy = (newExtent.height - old.height) / 2;
         // The overlap, in old coordinates.
         const Coord x0 = std::max(0, -dx);
         const Coord x1 = std::min(old.width, newExtent.width - dx);
@@ -156,6 +181,16 @@ void World::resize(Extent newExtent, bool keepPattern)
     current_ = std::move(current);
     next_ = std::move(next);
     population_ = current_.countAlive();
+
+    if (keepPattern) {
+        // The ants travel with the pattern; one the new world cropped comes back to the nearest edge.
+        for (Ant& ant : ants_) {
+            ant.position.x = std::clamp(ant.position.x + dx, 0, newExtent.width - 1);
+            ant.position.y = std::clamp(ant.position.y + dy, 0, newExtent.height - 1);
+        }
+    } else {
+        layOutAnts();
+    }
 }
 
 void World::setRule(const Rule& rule) noexcept
@@ -166,6 +201,49 @@ void World::setRule(const Rule& rule) noexcept
 void World::setTopology(Topology topology) noexcept
 {
     topology_ = topology;
+}
+
+void World::setAutomaton(Automaton automaton)
+{
+    automaton_ = automaton;
+    if (automaton_ == Automaton::LangtonAnt && ants_.empty())
+        resetAnts(1);
+}
+
+void World::setAnts(std::span<const Ant> ants)
+{
+    ants_.clear();
+    for (const Ant& ant : ants) {
+        if (ants_.size() >= static_cast<std::size_t>(kMaxAnts))
+            break;
+        if (extent().contains(ant.position))
+            ants_.push_back(ant);
+    }
+}
+
+void World::resetAnts(int count)
+{
+    ants_.resize(static_cast<std::size_t>(std::clamp(count, 0, kMaxAnts)));
+    layOutAnts();
+}
+
+bool World::toggleAntAt(CellPos p) noexcept
+{
+    if (!extent().contains(p))
+        return false;
+    if (std::erase_if(ants_, [p](const Ant& ant) { return ant.position == p; }) > 0)
+        return false;
+    if (ants_.size() >= static_cast<std::size_t>(kMaxAnts))
+        return false;
+    ants_.push_back({.position = p, .heading = Heading::North});   // within the reserved capacity
+    return true;
+}
+
+void World::layOutAnts() noexcept
+{
+    const auto count = static_cast<int>(ants_.size());
+    for (int i = 0; i < count; ++i)
+        ants_[static_cast<std::size_t>(i)] = defaultAnt(i, count, extent());
 }
 
 void World::setStepper(std::unique_ptr<Stepper> stepper) noexcept

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/Ant.hpp"
 #include "core/Rule.hpp"
 #include "core/Speed.hpp"
 #include "core/Types.hpp"
@@ -11,6 +12,7 @@
 #include <wx/sizer.h>
 #include <wx/slider.h>
 #include <wx/spinctrl.h>
+#include <wx/statbox.h>
 #include <wx/stattext.h>
 #include <wx/textctrl.h>
 
@@ -29,6 +31,11 @@ public:
     explicit ControlPanel(wxWindow* parent);
 
     void setRunning(bool running);   ///< Button label "Run" / "Pause".
+    /// Selects the automaton and greys out whatever only the other one uses.
+    void setAutomaton(core::Automaton automaton);
+    [[nodiscard]] core::Automaton selectedAutomaton() const;
+    void setAntCount(int count);   ///< Clamped to the control's range, so 0 ants still shows 1.
+    [[nodiscard]] int antCount() const;
     void setSpeed(core::Speed speed);
     [[nodiscard]] core::Speed speed() const;   ///< Spin value plus the Max check box.
     void setCellSize(int px);
@@ -53,7 +60,10 @@ private:
 
     // Child controls, owned by wx.
     wxButton* runPause_{};
-    wxSpinCtrl* density_{};     ///< 1..100 %
+    wxChoice* automaton_{};    ///< core::kAutomata names, in that order
+    wxSpinCtrl* density_{};    ///< 1..100 %
+    wxSpinCtrl* antCount_{};   ///< 1..core::kMaxAnts
+    wxButton* resetAnts_{};
     wxSlider* speedSlider_{};   ///< 0..Speed::kSliderMax (log scale)
     wxSpinCtrl* speedSpin_{};   ///< Speed::kMin..kMax
     wxCheckBox* maxSpeed_{};
@@ -62,6 +72,7 @@ private:
     wxCheckBox* showGrid_{};
     wxStaticText* worldInfo_{};
     wxCheckBox* wrap_{};
+    wxStaticBox* ruleBox_{};   ///< Disabling it greys out the whole Rule group at once
     wxChoice* rulePreset_{};   ///< kRulePresets names, then "Custom"
     wxTextCtrl* ruleText_{};   ///< wxTE_PROCESS_ENTER
     wxStaticText* ruleError_{};

@@ -14,6 +14,7 @@ inline constexpr core::Speed kSpeed{.gensPerSecond = 30};
 inline constexpr int kCellSize = 4;   ///< Used until the first fit.
 inline constexpr bool kShowGrid = true;
 inline constexpr int kRandomDensityPercent = 25;
+inline constexpr int kAntCount = 1;   ///< Ants the panel starts with; the world seeds one with the mode.
 inline constexpr int kControlPanelWidthDip = 260;
 inline constexpr int kFrameWidthDip = 1280, kFrameHeightDip = 860;
 inline constexpr int kMinFrameWidthDip = 800, kMinFrameHeightDip = 520;

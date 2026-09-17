@@ -28,7 +28,8 @@ public:
     struct Callbacks {
         /// Apply a stroke segment.
         std::function<void(std::span<const core::CellPos>, core::Cell)> paintCells;
-        std::function<void()> viewChanged;   ///< Zoom, scroll or resize.
+        std::function<void(core::CellPos)> toggleAnt;   ///< Ctrl + left click on a cell.
+        std::function<void()> viewChanged;              ///< Zoom, scroll or resize.
         /// nullopt = the pointer is not over the world.
         std::function<void(std::optional<core::CellPos>)> hoverChanged;
     };

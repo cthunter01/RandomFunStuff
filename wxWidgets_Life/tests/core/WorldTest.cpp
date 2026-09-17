@@ -1,5 +1,6 @@
 #include "core/World.hpp"
 
+#include "core/Ant.hpp"
 #include "core/ParallelBands.hpp"
 #include "core/Random.hpp"
 #include "core/ReferenceStepper.hpp"
@@ -444,6 +445,191 @@ TEST(WorldTest, SetStepperKeepsTheState)
     }
     EXPECT_EQ(reference.cells(), banded.cells());
     EXPECT_EQ(reference.population(), banded.population());
+}
+
+// ---- Langton's ant ---------------------------------------------------------------------------------
+
+TEST(WorldTest, TheAntModeMovesEveryAntOncePerGeneration)
+{
+    World world({10, 10});
+    world.setAutomaton(Automaton::LangtonAnt);
+    world.setAnts(std::vector<Ant>{{{2, 2}, Heading::North}, {{7, 7}, Heading::South}});
+
+    world.step();
+    EXPECT_EQ(world.generation(), 1u);
+    EXPECT_EQ(world.population(), 2);   // each ant lit the cell it stood on
+    EXPECT_EQ(world.at({2, 2}), kAlive);
+    EXPECT_EQ(world.at({7, 7}), kAlive);
+    EXPECT_EQ(world.ants()[0], (Ant{{3, 2}, Heading::East}));
+    EXPECT_EQ(world.ants()[1], (Ant{{6, 7}, Heading::West}));
+    EXPECT_EQ(world.population(), world.cells().countAlive());
+}
+
+TEST(WorldTest, AntsShareTheGridInIndexOrder)
+{
+    // Both ants start on the same dead cell, so the first lights it and the second finds it alight.
+    World world({9, 9});
+    world.setAutomaton(Automaton::LangtonAnt);
+    world.setAnts(std::vector<Ant>{{{4, 4}, Heading::North}, {{4, 4}, Heading::North}});
+
+    world.step();
+    EXPECT_EQ(world.at({4, 4}), kDead);
+    EXPECT_EQ(world.population(), 0);
+    EXPECT_EQ(world.ants()[0], (Ant{{5, 4}, Heading::East}));   // turned right on a dead cell
+    EXPECT_EQ(world.ants()[1], (Ant{{3, 4}, Heading::West}));   // turned left on a live one
+}
+
+TEST(WorldTest, TheAntAlwaysWrapsWhateverTheTopology)
+{
+    for (const Topology topology : kTopologies) {
+        SCOPED_TRACE(toString(topology));
+        World world({4, 4}, Rule{}, topology);
+        world.setAutomaton(Automaton::LangtonAnt);
+        world.setAnts(std::vector<Ant>{{{0, 0}, Heading::West}});   // turns right to north, off the top
+
+        world.step();
+        EXPECT_EQ(world.ants()[0], (Ant{{0, 3}, Heading::North}));
+        EXPECT_EQ(world.at({0, 0}), kAlive);
+    }
+}
+
+TEST(WorldTest, SwitchingAutomatonKeepsTheCellsAndSeedsAnAnt)
+{
+    World world({9, 7});
+    draw(world, kGlider, {1, 1});
+    const Grid before = world.cells();
+    EXPECT_EQ(world.automaton(), Automaton::Life);
+    EXPECT_TRUE(world.ants().empty());
+
+    world.setAutomaton(Automaton::LangtonAnt);
+    EXPECT_EQ(world.automaton(), Automaton::LangtonAnt);
+    EXPECT_EQ(world.cells(), before);
+    ASSERT_EQ(world.ants().size(), 1u);
+    EXPECT_EQ(world.ants()[0], defaultAnt(0, 1, world.extent()));
+
+    world.step();
+    const Ant moved = world.ants()[0];
+    world.setAutomaton(Automaton::Life);   // the ant is kept, and a Life step leaves it alone
+    ASSERT_EQ(world.ants().size(), 1u);
+    EXPECT_EQ(world.ants()[0], moved);
+    world.step();
+    EXPECT_EQ(world.ants()[0], moved);
+}
+
+TEST(WorldTest, ClearAndRandomizePutTheAntsBack)
+{
+    World world({20, 12});
+    world.setAutomaton(Automaton::LangtonAnt);
+    world.resetAnts(3);
+    const std::vector<Ant> start(world.ants().begin(), world.ants().end());
+    ASSERT_EQ(start.size(), 3u);
+
+    const auto run = [&] {
+        for (int g = 0; g < 25; ++g)
+            world.step();
+    };
+
+    run();
+    EXPECT_NE(world.ants()[0], start[0]);
+    world.clear();
+    EXPECT_TRUE(std::ranges::equal(world.ants(), start));
+    EXPECT_EQ(world.generation(), 0u);
+
+    run();
+    world.randomize(0.5, 9);
+    EXPECT_TRUE(std::ranges::equal(world.ants(), start));
+    EXPECT_EQ(world.generation(), 0u);
+}
+
+TEST(WorldTest, ResizeMovesTheAntsWithThePattern)
+{
+    World world({4, 4});
+    world.setAutomaton(Automaton::LangtonAnt);
+    world.setAnts(std::vector<Ant>{{{1, 1}, Heading::East}});
+
+    world.resize({8, 8}, true);   // offset ((8 - 4) / 2, (8 - 4) / 2) = (2, 2)
+    EXPECT_EQ(world.ants()[0], (Ant{{3, 3}, Heading::East}));
+    world.resize({4, 4}, true);
+    EXPECT_EQ(world.ants()[0], (Ant{{1, 1}, Heading::East}));
+
+    // A world that cropped an ant pulls it back to the nearest edge.
+    world.setAnts(std::vector<Ant>{{{3, 3}, Heading::North}});
+    world.resize({2, 2}, true);   // offset (-1, -1)
+    EXPECT_EQ(world.ants()[0].position, (CellPos{1, 1}));
+    EXPECT_TRUE(world.extent().contains(world.ants()[0].position));
+
+    world.resize({6, 5}, false);   // nothing kept, so the ants start over
+    EXPECT_EQ(world.ants()[0], defaultAnt(0, 1, (Extent{6, 5})));
+}
+
+TEST(WorldTest, ToggleAntAtAddsAndRemoves)
+{
+    World world({6, 6});
+    EXPECT_TRUE(world.toggleAntAt({2, 3}));
+    ASSERT_EQ(world.ants().size(), 1u);
+    EXPECT_EQ(world.ants()[0], (Ant{{2, 3}, Heading::North}));
+
+    EXPECT_FALSE(world.toggleAntAt({2, 3}));
+    EXPECT_TRUE(world.ants().empty());
+
+    EXPECT_FALSE(world.toggleAntAt({-1, 0}));   // outside the world
+    EXPECT_FALSE(world.toggleAntAt({6, 6}));
+    EXPECT_TRUE(world.ants().empty());
+
+    World crowded({kMaxAnts + 1, 1});
+    for (Coord x = 0; x < kMaxAnts; ++x)
+        EXPECT_TRUE(crowded.toggleAntAt({x, 0})) << "ant " << x;
+    EXPECT_FALSE(crowded.toggleAntAt({kMaxAnts, 0}));   // kMaxAnts is the limit
+    EXPECT_EQ(crowded.ants().size(), static_cast<std::size_t>(kMaxAnts));
+}
+
+// Langton's ant is chaotic for about ten thousand moves and then starts building a "highway": the same
+// 104 moves over and over, each time two cells further down the diagonal and twelve live cells heavier.
+// These numbers pin the turn rule, the wrapping and World's incremental population count at once.
+TEST(WorldTest, TheAntBuildsTheKnownHighway)
+{
+    constexpr int kChaos = 9977;   // moves before the highway begins
+    constexpr int kPeriod = 104;
+    constexpr Coord kShiftX = -2;
+    constexpr Coord kShiftY = 2;
+
+    // Wide enough that the ant never reaches an edge here, so wrapping cannot disturb the pattern.
+    World world({128, 128});
+    world.setAutomaton(Automaton::LangtonAnt);
+    const CellPos start = world.ants()[0].position;
+    const auto run = [&](int moves) {
+        for (int i = 0; i < moves; ++i)
+            world.step();
+    };
+
+    run(kChaos);
+    EXPECT_EQ(world.population(), 715);
+    EXPECT_EQ(world.ants()[0], (Ant{{start.x - 15, start.y - 10}, Heading::West}));
+
+    for (int period = 0; period < 10; ++period) {
+        SCOPED_TRACE(std::format("period {}", period));
+        const Ant before = world.ants()[0];
+        const CellCount population = world.population();
+        run(kPeriod);
+        EXPECT_EQ(world.ants()[0].heading, before.heading);
+        EXPECT_EQ(world.ants()[0].position,
+                  (CellPos{before.position.x + kShiftX, before.position.y + kShiftY}));
+        EXPECT_EQ(world.population(), population + 12);
+    }
+
+    // By now the ant has left the chaotic core behind, so its whole neighbourhood is a plain copy.
+    const Grid before = world.cells();
+    const CellPos at = world.ants()[0].position;
+    run(kPeriod);
+    const CellPos moved = world.ants()[0].position;
+    constexpr Coord kRadius = 16;
+    for (Coord dy = -kRadius; dy <= kRadius; ++dy) {
+        for (Coord dx = -kRadius; dx <= kRadius; ++dx) {
+            ASSERT_EQ(before.at({at.x + dx, at.y + dy}), world.cells().at({moved.x + dx, moved.y + dy}))
+                << "at (" << dx << ", " << dy << ")";
+        }
+    }
+    EXPECT_EQ(world.population(), world.cells().countAlive());
 }
 
 }

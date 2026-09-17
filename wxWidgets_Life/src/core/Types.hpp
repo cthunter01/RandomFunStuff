@@ -35,6 +35,27 @@ inline constexpr std::array kTopologies{Topology::Bounded, Topology::Torus};
     std::unreachable();
 }
 
+/// Which automaton the world runs. The core branches on it only in switches without `default`, so
+/// -Wswitch lists every place there that a new automaton needs.
+enum class Automaton : std::uint8_t {
+    Life,         ///< A two-state B/S rule, stepped by a Stepper.
+    LangtonAnt,   ///< Langton's ant: the cells are its tape, and the ants are the only movers.
+};
+
+/// Every Automaton, so tests cover a new one automatically.
+inline constexpr std::array kAutomata{Automaton::Life, Automaton::LangtonAnt};
+
+[[nodiscard]] constexpr std::string_view toString(Automaton a) noexcept
+{
+    switch (a) {
+    case Automaton::Life:
+        return "Life";
+    case Automaton::LangtonAnt:
+        return "Langton's ant";
+    }
+    std::unreachable();
+}
+
 /// Cell position; (0, 0) is the top-left cell.
 struct CellPos {
     Coord x = 0;

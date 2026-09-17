@@ -11,9 +11,9 @@ FetchContent_MakeAvailable(googletest)
 include(GoogleTest)
 
 add_executable(wxlife_tests
-  core/FormatTest.cpp core/GridTest.cpp core/LineTest.cpp core/PacerTest.cpp core/ParallelBandsTest.cpp
-  core/RandomTest.cpp core/RuleTest.cpp core/SpeedTest.cpp core/StepperTest.cpp core/WorldLimitsTest.cpp
-  core/WorldTest.cpp render/RasterizerTest.cpp render/ViewportTest.cpp)
+  core/AntTest.cpp core/FormatTest.cpp core/GridTest.cpp core/LineTest.cpp core/PacerTest.cpp
+  core/ParallelBandsTest.cpp core/RandomTest.cpp core/RuleTest.cpp core/SpeedTest.cpp core/StepperTest.cpp
+  core/WorldLimitsTest.cpp core/WorldTest.cpp render/RasterizerTest.cpp render/ViewportTest.cpp)
 target_include_directories(wxlife_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})   # support/AsciiGrid.hpp
 target_link_libraries(wxlife_tests PRIVATE wxlife::render wxlife::core GTest::gtest_main)   # never wx
 wxlife_configure_target(wxlife_tests)

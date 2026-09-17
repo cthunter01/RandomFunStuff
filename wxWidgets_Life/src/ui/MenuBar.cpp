@@ -12,6 +12,10 @@ wxMenuBar* buildMenuBar()
     auto* file = new wxMenu;
     file->Append(wxID_EXIT, "&Quit\tCtrl+Q");
 
+    auto* automaton = new wxMenu;
+    automaton->AppendRadioItem(ID_AUTOMATON_LIFE, "&Life");
+    automaton->AppendRadioItem(ID_AUTOMATON_ANT, "Langton's &Ant");
+
     auto* engine = new wxMenu;
     engine->AppendRadioItem(ID_ENGINE_BANDED, "&Banded");
     engine->AppendRadioItem(ID_ENGINE_REFERENCE, "&Reference");
@@ -24,11 +28,14 @@ wxMenuBar* buildMenuBar()
     simulation->Append(ID_SLOWER, "S&lower\tCtrl+[");
     simulation->AppendCheckItem(ID_TOGGLE_MAX_SPEED, "&Max Speed\tCtrl+M");
     simulation->AppendSeparator();
+    // The automaton decides whether the engine below it matters at all, so it comes first.
+    simulation->AppendSubMenu(automaton, "&Automaton");
     simulation->AppendSubMenu(engine, "&Engine");
 
     auto* edit = new wxMenu;
     edit->Append(ID_CLEAR, "&Clear\tCtrl+Delete");
     edit->Append(ID_RANDOMIZE, "&Randomize\tCtrl+R");
+    edit->Append(ID_RESET_ANTS, "Reset &Ants");   // no accelerator: every free Ctrl key is a GTK binding
     edit->AppendSeparator();
     edit->Append(ID_FOCUS_RULE, toWx("Edit R&ule…\tCtrl+L"));
 

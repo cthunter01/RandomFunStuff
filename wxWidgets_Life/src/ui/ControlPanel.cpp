@@ -10,6 +10,7 @@
 #include <wx/arrstr.h>
 #include <wx/statbox.h>
 
+#include <algorithm>
 #include <format>
 #include <initializer_list>
 
@@ -76,8 +77,9 @@ ControlPanel::ControlPanel(wxWindow* parent)
 
     // GTK changes these controls under the wheel even without the focus, so scrolling the panel would
     // silently change values. A consumed wheel event never reaches GTK.
-    for (wxWindow* control : std::initializer_list<wxWindow*>{density_, speedSlider_, speedSpin_,
-                                                              cellSizeSlider_, cellSizeSpin_, rulePreset_}) {
+    for (wxWindow* control :
+         std::initializer_list<wxWindow*>{automaton_, density_, antCount_, speedSlider_, speedSpin_,
+                                          cellSizeSlider_, cellSizeSpin_, rulePreset_}) {
         control->Bind(wxEVT_MOUSEWHEEL, [control](wxMouseEvent& event) {
             if (control->HasFocus())
                 event.Skip();
@@ -91,6 +93,37 @@ void ControlPanel::setRunning(bool running)
 }
 
 // Setters use SetValue/SetSelection/ChangeValue, which never emit events, so there are no feedback loops.
+void ControlPanel::setAutomaton(core::Automaton automaton)
+{
+    const auto found = std::ranges::find(core::kAutomata, automaton);
+    automaton_->SetSelection(static_cast<int>(found - core::kAutomata.begin()));
+
+    // Each automaton greys out what only the other one uses, so a dead control is visible as such.
+    const bool life = automaton == core::Automaton::Life;
+    antCount_->Enable(!life);
+    resetAnts_->Enable(!life);
+    wrap_->Enable(life);   // the ant always wraps, whatever the topology says
+    ruleBox_->Enable(life);
+}
+
+core::Automaton ControlPanel::selectedAutomaton() const
+{
+    const int selection = automaton_->GetSelection();
+    if (selection < 0 || static_cast<std::size_t>(selection) >= core::kAutomata.size())
+        return core::Automaton::Life;
+    return core::kAutomata[static_cast<std::size_t>(selection)];
+}
+
+void ControlPanel::setAntCount(int count)
+{
+    antCount_->SetValue(count);
+}
+
+int ControlPanel::antCount() const
+{
+    return antCount_->GetValue();
+}
+
 void ControlPanel::setSpeed(core::Speed speed)
 {
     speedSpin_->SetValue(speed.gensPerSecond);
@@ -188,23 +221,39 @@ void ControlPanel::addSimulationGroup(wxSizer& column)
     auto* group = new wxStaticBoxSizer(wxVERTICAL, this, "Simulation");
     wxStaticBox* box = group->GetStaticBox();   // wx 3 recommends it as the parent of the group's controls
 
+    wxArrayString automatonNames;
+    for (const core::Automaton automaton : core::kAutomata)
+        automatonNames.Add(toWx(core::toString(automaton)));
+    automaton_ = new wxChoice(box, wxID_ANY, wxDefaultPosition, wxDefaultSize, automatonNames);
+    automaton_->SetSelection(0);
+    automaton_->SetToolTip("Which automaton the world runs");
+
     runPause_ = new wxButton(box, wxID_ANY, "Run");
     auto* step = new wxButton(box, wxID_ANY, "Step");
     auto* clear = new wxButton(box, wxID_ANY, "Clear");
     auto* randomize = new wxButton(box, wxID_ANY, "Randomize");
+    // Created before antCount_, so the density stays the group's first wxSpinCtrl.
     density_ = makeSpin(box, kMinDensityPercent, kMaxDensityPercent, defaults::kRandomDensityPercent);
     density_->SetToolTip("Share of live cells after Randomize");
+    antCount_ = makeSpin(box, 1, core::kMaxAnts, defaults::kAntCount);
+    antCount_->SetToolTip("Ants on the world; each one moves once per generation");
+    resetAnts_ = new wxButton(box, wxID_ANY, "Reset");
 
+    sendOn(*automaton_, wxEVT_CHOICE, ID_AUTOMATON_CHANGED);
     sendOn(*runPause_, wxEVT_BUTTON, ID_RUN_PAUSE);
     sendOn(*step, wxEVT_BUTTON, ID_STEP);
     sendOn(*clear, wxEVT_BUTTON, ID_CLEAR);
     sendOn(*randomize, wxEVT_BUTTON, ID_RANDOMIZE);
-    // The density sends nothing: the Randomize handler reads it.
+    // The density sends nothing: the Randomize handler reads it. Changing the count is a reset.
+    sendOn(*antCount_, wxEVT_SPINCTRL, ID_RESET_ANTS);
+    sendOn(*resetAnts_, wxEVT_BUTTON, ID_RESET_ANTS);
 
+    group->Add(automaton_, rowFlags());
     group->Add(buttonGrid({runPause_, step, clear, randomize}), rowFlags());
     group->Add(stretchRow(new wxStaticText(box, wxID_ANY, "Density"),
                           {density_, new wxStaticText(box, wxID_ANY, "%")}),
                rowFlags());
+    group->Add(stretchRow(new wxStaticText(box, wxID_ANY, "Ants"), {antCount_, resetAnts_}), rowFlags());
     column.Add(group, wxSizerFlags().Expand().Border());
 }
 
@@ -290,6 +339,7 @@ void ControlPanel::addRuleGroup(wxSizer& column)
 {
     auto* group = new wxStaticBoxSizer(wxVERTICAL, this, "Rule");
     wxStaticBox* box = group->GetStaticBox();
+    ruleBox_ = box;   // Life-only: setAutomaton() greys out the whole group through it
 
     wxArrayString presetNames;
     for (const core::NamedRule& preset : core::kRulePresets)

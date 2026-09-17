@@ -14,10 +14,14 @@ enum CommandId : int {
     ID_STEP,
     ID_CLEAR,
     ID_RANDOMIZE,
+    ID_RESET_ANTS,   ///< Read ControlPanel::antCount().
     ID_FASTER,
     ID_SLOWER,
     ID_TOGGLE_MAX_SPEED,
     ID_SPEED_CHANGED,   ///< Read ControlPanel::speed().
+    ID_AUTOMATON_LIFE,
+    ID_AUTOMATON_ANT,
+    ID_AUTOMATON_CHANGED,   ///< Read ControlPanel::selectedAutomaton().
     ID_ENGINE_BANDED,
     ID_ENGINE_REFERENCE,
     ID_ZOOM_IN,
