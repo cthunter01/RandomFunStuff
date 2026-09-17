@@ -1,0 +1,20 @@
+/// @namespace life
+/// Root namespace of wxLife: the simulation, its rendering and the wxWidgets UI (see docs/architecture.md).
+
+/// @namespace life::core
+/// The simulation (world model, rules, stepping engines, limits and pacing), using only the standard library.
+
+/// @namespace life::core::kernel
+/// The stepping hot loop, kept apart so it can be compiled with its own optimisation flags.
+
+/// @namespace life::render
+/// Pixel types, camera and rasterizer that turn a Grid into canvas pixels; uses core, never wx.
+
+/// @namespace life::ui
+/// The wxWidgets user interface: main frame, canvas, side panel, dialog, theme colours and simulation timer.
+
+/// @namespace life::ui::defaults
+/// Start-up settings of the application.
+
+/// @namespace life::app
+/// The wxApp entry point, which owns the World.
