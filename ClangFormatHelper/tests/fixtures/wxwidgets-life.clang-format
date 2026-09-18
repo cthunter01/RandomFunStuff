@@ -1,0 +1,24 @@
+BasedOnStyle: LLVM
+Standard: Latest
+IndentWidth: 4
+ColumnLimit: 110
+AccessModifierOffset: -4
+PointerAlignment: Left
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: true
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+BreakTemplateDeclarations: Yes
+SpacesBeforeTrailingComments: 3
+FixNamespaceComments: false
+InsertNewlineAtEOF: true
+# Own headers, then wx, then the standard library.
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<wx/'
+    Priority: 2
+  - Regex: '^<'
+    Priority: 3
