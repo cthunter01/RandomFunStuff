@@ -2,7 +2,7 @@
   "clangFormatVersion": "23.1.1",
   "sourceTag": "llvmorg-23.1.1",
   "rstSha256": "1085a5209900d2a9e740c0bb87f79d576c95300784d89ad06c923ae3d46e369c",
-  "generatedAt": "2026-09-17T23:22:35.262Z",
+  "generatedAt": "2026-09-18T01:05:17.797Z",
   "baseStyles": [
     "LLVM",
     "Google",
@@ -691,7 +691,13 @@
       "group": "Alignment",
       "languageHints": [],
       "emittedByDumpConfig": true,
-      "requires": []
+      "requires": [
+        {
+          "option": "AllowShortCaseLabelsOnASingleLine",
+          "value": "true",
+          "reason": "Short case labels can only be aligned when they are allowed on a single line."
+        }
+      ]
     },
     {
       "name": "AlignConsecutiveTableGenBreakingDAGArgColons",

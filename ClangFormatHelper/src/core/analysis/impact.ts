@@ -39,6 +39,17 @@ export interface ImpactResult {
     witness?: { value: ConfigValue; hunk: Hunk | null };
     candidatesTried: number;
     skipReason?: 'degenerate' | 'deprecated' | 'no-candidates' | 'needs-prerequisite';
+    /**
+     * Other settings that had to be switched on for this one to do anything.
+     *
+     * Plenty of options are inert purely because a parent feature is off —
+     * `BraceWrapping.*` does nothing unless `BreakBeforeBraces: Custom`, and the
+     * `AlignConsecutive*` modifiers do nothing unless that family's `Enabled` is
+     * true. Reporting those as "no effect on your code" is a lie: the honest
+     * question is whether they matter *once the feature is on*, so the sweep turns
+     * the prerequisite on and says that it did.
+     */
+    assumes?: Array<{ path: ConfigPath; value: ConfigValue }>;
 }
 
 export interface ImpactOptions {
@@ -59,6 +70,41 @@ export type ImpactMap = Map<ConfigPath, ImpactResult>;
 interface Candidate {
     path: ConfigPath;
     value: ConfigValue;
+    /** Settings applied alongside the candidate so it can have any effect at all. */
+    assumes: Array<{ path: ConfigPath; value: ConfigValue }>;
+}
+
+/**
+ * Settings that must accompany a probe of `path`, or the result is meaningless.
+ *
+ * Two sources: the catalog's declared dependencies (`BraceWrapping` needs
+ * `BreakBeforeBraces: Custom`), and the near-universal convention that a nested
+ * struct's modifier fields are dead unless that struct's own `Enabled` is true.
+ */
+function prerequisitesFor(
+    option: OptionDescriptor,
+    path: ConfigPath,
+    effective: Map<string, unknown>,
+): Array<{ path: ConfigPath; value: ConfigValue }> {
+    const needed: Array<{ path: ConfigPath; value: ConfigValue }> = [];
+
+    for (const requirement of option.requires) {
+        // A requirement with no concrete value is advisory; we cannot act on it.
+        if (!requirement.value) continue;
+        // Catalog values are text, because that is how the docs spell them.
+        const value: ConfigValue =
+            requirement.value === 'true' ? true : requirement.value === 'false' ? false : requirement.value;
+        if (effective.get(requirement.option) === value) continue;
+        needed.push({ path: requirement.option, value });
+    }
+
+    const field = path.startsWith(`${option.name}.`) ? path.slice(option.name.length + 1) : null;
+    if (field && field !== 'Enabled' && option.fields.some((f) => f.name === 'Enabled')) {
+        if (effective.get(`${option.name}.Enabled`) !== true) {
+            needed.push({ path: `${option.name}.Enabled`, value: true });
+        }
+    }
+    return needed;
 }
 
 /** Plausible alternatives for a numeric option, kept deliberately short. */
@@ -113,9 +159,11 @@ function candidatesForOption(option: OptionDescriptor, current: unknown): Config
 }
 
 /** Builds the style string for "current config, but with `path` set to `value`". */
-function styleWith(doc: StyleDocument, path: ConfigPath, value: ConfigValue): string {
+function styleWith(doc: StyleDocument, candidate: Candidate): string {
     const overrides = new Map(doc.overrides);
-    overrides.set(path, value);
+    for (const assumption of candidate.assumes) overrides.set(assumption.path, assumption.value);
+    // An empty path means "just the prerequisites", used to build their baseline.
+    if (candidate.path) overrides.set(candidate.path, candidate.value);
     const body = { BasedOnStyle: doc.baseStyle, ...toNestedObject(overrides) };
     return yaml.dump(body, { flowLevel: 0, lineWidth: -1 }).trim();
 }
@@ -138,7 +186,12 @@ export async function analyseImpact(options: ImpactOptions): Promise<ImpactMap> 
     const results: ImpactMap = new Map();
     const queue: Candidate[] = [];
 
-    const enqueue = (path: ConfigPath, values: ConfigValue[], skipReason?: ImpactResult['skipReason']): void => {
+    const enqueue = (
+        option: OptionDescriptor | null,
+        path: ConfigPath,
+        values: ConfigValue[],
+        skipReason?: ImpactResult['skipReason'],
+    ): void => {
         if (skipReason) {
             results.set(path, { path, verdict: 'skipped', magnitude: 0, candidatesTried: 0, skipReason });
             return;
@@ -147,27 +200,61 @@ export async function analyseImpact(options: ImpactOptions): Promise<ImpactMap> 
             results.set(path, { path, verdict: 'unknown', magnitude: 0, candidatesTried: 0 });
             return;
         }
-        results.set(path, { path, verdict: 'inert', magnitude: 0, candidatesTried: values.length });
-        for (const value of values) queue.push({ path, value });
+        const assumes = option ? prerequisitesFor(option, path, effective) : [];
+        results.set(path, {
+            path,
+            verdict: 'inert',
+            magnitude: 0,
+            candidatesTried: values.length,
+            ...(assumes.length > 0 ? { assumes } : {}),
+        });
+        for (const value of values) queue.push({ path, value, assumes });
     };
 
     for (const option of catalog.options) {
         if (DEGENERATE_OPTIONS.has(option.name)) {
-            enqueue(option.name, [], 'degenerate');
+            enqueue(null, option.name, [], 'degenerate');
             continue;
         }
         if (option.kind === 'deprecated' || option.deprecated) {
-            enqueue(option.name, [], 'deprecated');
+            enqueue(null, option.name, [], 'deprecated');
             continue;
         }
-        enqueue(option.name, candidatesForOption(option, effective.get(option.name)));
+        enqueue(option, option.name, candidatesForOption(option, effective.get(option.name)));
         for (const field of option.fields) {
             const path = `${option.name}.${field.name}`;
             if (field.deprecated) {
-                enqueue(path, [], 'deprecated');
+                enqueue(null, path, [], 'deprecated');
                 continue;
             }
-            enqueue(path, candidatesForField(option, field, effective.get(path)));
+            enqueue(option, path, candidatesForField(option, field, effective.get(path)));
+        }
+    }
+
+    // A candidate probed with prerequisites must be compared against the config
+    // that *already has those prerequisites* — otherwise the prerequisite's own
+    // effect is attributed to the option under test and everything downstream of a
+    // newly-enabled feature looks falsely live.
+    const assumptionKey = (assumes: Candidate['assumes']): string =>
+        assumes.map((a) => `${a.path}=${JSON.stringify(a.value)}`).join('&');
+
+    const baselines = new Map<string, string>([['', baselineText]]);
+    const needed = [...new Set(queue.map((c) => assumptionKey(c.assumes)))].filter((k) => k !== '');
+    if (needed.length > 0) {
+        const byKey = new Map(queue.map((c) => [assumptionKey(c.assumes), c.assumes]));
+        for (let i = 0; i < needed.length; i += chunkSize) {
+            throwIfAborted(signal);
+            const slice = needed.slice(i, i + chunkSize);
+            const outcomes = await port.formatBatch(
+                code,
+                filename,
+                // The prerequisites alone, with nothing else changed.
+                slice.map((key) => styleWith(doc, { path: '', value: '', assumes: byKey.get(key)! })),
+            );
+            slice.forEach((key, index) => {
+                const outcome = outcomes[index]!;
+                baselines.set(key, outcome.status === 'changed' ? (outcome.text ?? baselineText) : baselineText);
+            });
         }
     }
 
@@ -178,25 +265,26 @@ export async function analyseImpact(options: ImpactOptions): Promise<ImpactMap> 
         const outcomes = await port.formatBatch(
             code,
             filename,
-            chunk.map((c) => styleWith(doc, c.path, c.value)),
+            chunk.map((c) => styleWith(doc, c)),
         );
         for (let j = 0; j < chunk.length; j++) {
             const candidate = chunk[j]!;
             const outcome = outcomes[j]!;
+            const reference = baselines.get(assumptionKey(candidate.assumes)) ?? baselineText;
             // `unchanged` means clang-format itself reported the input was already
             // formatted — an inert candidate that cost us no text over the wire.
             if (outcome.status !== 'changed') continue;
-            const text = outcome.text ?? baselineText;
-            if (text === baselineText) continue;
+            const text = outcome.text ?? code;
+            if (text === reference) continue;
 
-            const magnitude = changedLineCount(baselineText, text);
+            const magnitude = changedLineCount(reference, text);
             const existing = results.get(candidate.path)!;
             if (magnitude > existing.magnitude || existing.verdict !== 'live') {
                 results.set(candidate.path, {
                     ...existing,
                     verdict: 'live',
                     magnitude: Math.max(existing.magnitude, magnitude),
-                    witness: { value: candidate.value, hunk: firstHunk(baselineText, text) },
+                    witness: { value: candidate.value, hunk: firstHunk(reference, text) },
                 });
             }
         }

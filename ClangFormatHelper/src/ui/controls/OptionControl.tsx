@@ -144,7 +144,18 @@ export const OptionControl = memo(function OptionControl(props: ControlProps): R
                     {label}
                 </span>
                 <span className="option-badges">
-                    {impact?.verdict === 'live' && <span className="badge live">{impact.magnitude} lines</span>}
+                    {impact?.verdict === 'live' && (
+                        <span
+                            className="badge live"
+                            title={
+                                impact.assumes?.length
+                                    ? `Measured with ${impact.assumes.map((a) => `${a.path}: ${String(a.value)}`).join(', ')}`
+                                    : undefined
+                            }
+                        >
+                            {impact.magnitude} lines
+                        </span>
+                    )}
                     {inert && <span className="badge dim">no effect here</span>}
                     {impact?.verdict === 'unknown' && <span className="badge dim">?</span>}
                     {provenance === 'derived' && <span className="badge derived">derived</span>}
@@ -167,6 +178,13 @@ export const OptionControl = memo(function OptionControl(props: ControlProps): R
                             {blocked.fix.label}
                         </button>
                     )}
+                </div>
+            )}
+            {impact?.verdict === 'live' && impact.assumes && impact.assumes.length > 0 && (
+                // Saying "N lines" without this would imply the option does that on its
+                // own, when in fact a parent feature had to be switched on first.
+                <div className="assumes">
+                    needs {impact.assumes.map((a) => `${a.path}: ${String(a.value)}`).join(', ')}
                 </div>
             )}
             {density === 'inline' && impact?.witness?.hunk && (

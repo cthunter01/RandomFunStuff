@@ -199,6 +199,13 @@ const REQUIREMENTS: Record<string, OptionDescriptor['requires']> = {
             reason: 'QualifierAlignment: Custom is rejected unless QualifierOrder lists the qualifiers.',
         },
     ],
+    AlignConsecutiveShortCaseStatements: [
+        {
+            option: 'AllowShortCaseLabelsOnASingleLine',
+            value: 'true',
+            reason: 'Short case labels can only be aligned when they are allowed on a single line.',
+        },
+    ],
     InsertTrailingCommas: [
         {
             option: 'BinPackArguments',

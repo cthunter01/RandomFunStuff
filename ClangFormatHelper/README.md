@@ -15,18 +15,29 @@ than writing new code paths.
 clang-format has **209 options and 134 nested fields**, and the documentation for any one of them tells you what
 it does in the abstract, not what it does to *your* code. So you edit, re-run, diff, and repeat.
 
-The interesting part is that most options do nothing to any given file. Measured on this project:
+The interesting part is that most options do nothing to any given file — and *which* ones depends entirely on
+what your code contains. Measured against the samples that ship with the app:
 
-| Sample                            | Options that change it |
-| --------------------------------- | ---------------------- |
-| A five-line toy snippet            | 13 of 267              |
-| A realistic 60-line C++ header     | ~58 of 267             |
-| A real 528-line source file        | 69 of 267              |
+| Sample                          | Lines | Options it demonstrably changes |
+| ------------------------------- | ----- | ------------------------------- |
+| Kitchen sink (the default)      |   286 | 117 of 267                      |
+| Templates & concepts            |    86 |  62 of 267                      |
+| Short constructs & braces       |    35 |  41 of 267                      |
+| Long calls & line breaking      |    21 |  37 of 267                      |
+| Declarations & alignment        |    26 |  36 of 267                      |
+| Includes & macros               |    31 |  21 of 267                      |
+| **All C++ samples together**    |       | **129 of 267**                  |
 
-So roughly four fifths of the option surface is noise for whatever you happen to be formatting. This app finds
-the fifth that matters by brute force — it formats your sample once per candidate value and compares — and then
-dims, ranks and annotates the rest. A format call costs about half a millisecond, which is what makes an
-otherwise absurd approach practical.
+This app finds the options that matter by brute force — it formats your sample once per candidate value and
+compares — and then dims, ranks and annotates the rest. A format call costs about half a millisecond, which is
+what makes an otherwise absurd approach practical.
+
+It also means the sample is not decoration. Code with no `union` in it cannot show you what `AfterUnion` does,
+so the shipped samples are built to cover a wide span of C and C++ deliberately — structs, unions, enums,
+bitfields, `else` branches, `do`/`while`, `switch`, `try`/`catch`, `goto`, `extern "C"`, operator overloads,
+concepts and requires-clauses, macros, raw strings, numeric literals — and a test asserts each of those
+constructs is still present by checking that the corresponding option still does something. Paste your own code
+in and the same analysis runs against that instead.
 
 ## Running it
 
@@ -55,6 +66,8 @@ Press **Analyse my code** to run the impact sweep. Afterwards every option carri
 | `no effect here`  | Every value we tried left your sample byte-identical. Dimmed.             |
 | `?`               | A free-form value (a regex, a list of macros) we cannot enumerate.        |
 | `derived`         | clang-format computed this value itself; you did not set it.              |
+| *assumed*         | Measured with a prerequisite switched on — `BraceWrapping.*` needs        |
+|                   | `BreakBeforeBraces: Custom`, for instance. Reported, never silent.        |
 | `ignored`         | You set it and clang-format ignored it — usually a missing prerequisite.  |
 
 Impact is always **relative to your current config**, not a global claim. An option that does nothing now may

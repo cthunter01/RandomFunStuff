@@ -122,6 +122,18 @@ and relative to the value currently in force**, which matters more than it sound
 - `Language` is excluded entirely: it selects the document, it is not a setting.
 - `DisableFormat` is excluded as degenerate — it makes the formatter a no-op.
 
+**Prerequisites are switched on rather than reported as "no effect".** A large family of options is inert not
+because your code lacks the construct but because a parent feature is off: nothing under `BraceWrapping.*` does
+anything unless `BreakBeforeBraces: Custom`, and the `AlignConsecutive*` modifiers do nothing unless that
+family's own `Enabled` is true. Calling those "no effect on your code" is simply false, and it hid 40-odd
+options. The sweep now applies the prerequisite alongside the candidate and records what it assumed, which the
+UI surfaces.
+
+That in turn requires **a baseline per assumption set**. Comparing a prerequisite-laden candidate against the
+plain baseline would attribute the prerequisite's own reformatting to the option under test, so every option
+downstream of a newly-enabled feature would look falsely live. Each distinct set of assumptions gets its own
+reference formatting first, and candidates are compared against that.
+
 Results carry a **witness**: the candidate that changed the most, plus a small hunk. The card feed's
 micro-previews are that witness, so they cost nothing extra.
 
@@ -183,6 +195,20 @@ a dark-mode user gets a white flash on every load. The browser test asserts `dat
 `load` event, which is the only way to catch that regression — it is invisible to any assertion made afterwards.
 Choosing `Match system` deletes the attribute rather than pinning the current preference, so the OS stays in
 charge from then on.
+
+## Samples
+
+The sample library is teaching material, not filler: an option the sample never exercises can only report "no
+effect on your code", which is true and useless. So sample breadth is treated as a tested property.
+
+`tests/core/languages/samples.test.ts` asserts the constructs are present *by measuring clang-format*, not by
+grepping for keywords — "the sample contains a union" is expressed as "`BraceWrapping.AfterUnion` changes this
+sample". That catches someone trimming the sample without noticing what it cost.
+
+The C++ and C samples are kept as real, compilable translation units: each was checked with
+`clang++ -fsyntax-only -std=c++20` (and `clang -std=c17`) before being embedded, and they are embedded verbatim
+via `String.raw` so no escaping can quietly corrupt them. C++ developers will read this code closely, and code
+that does not compile would undermine the whole tool.
 
 ## Known limitations
 

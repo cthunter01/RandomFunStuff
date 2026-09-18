@@ -14,66 +14,298 @@ import type { CodeSample, LanguageDefinition } from '../types.ts';
 const kitchenSink: CodeSample = {
     id: 'kitchen-sink',
     title: 'Kitchen sink',
-    exercises: ['includes', 'namespaces', 'classes', 'templates', 'lambdas', 'control flow', 'comments'],
-    code: `#include "world_canvas.hpp"
+    exercises: [
+        'includes', 'preprocessor', 'macros', 'extern "C"', 'namespaces', 'enums', 'structs', 'unions',
+        'bitfields', 'arrays of structs', 'classes', 'inheritance', 'access modifiers',
+        'constructor initialisers', 'operator overloads', 'templates', 'lambdas', 'if/else if/else',
+        'switch', 'do-while', 'try/catch', 'goto labels', 'ternaries', 'string literals', 'raw strings',
+        'numeric literals', 'comments', 'consecutive alignment', 'function pointers',
+    ],
+    code: String.raw`#include "telemetry/sampler.hpp"
+
+#include <sys/types.h>
 
 #include <algorithm>
-#include <memory>
+#include <cstdint>
+#include <cstdio>
+#include <map>
+#include <new>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
-#include <wx/dcbuffer.h>
+#include <telemetry/wire.h>
 
-namespace life::render {
+#define TELEMETRY_VERSION 3
+#define TELEMETRY_MAX_CHANNELS 64
+#define TELEMETRY_CLAMP(value, lo, hi) ((value) < (lo) ? (lo) : (value) > (hi) ? (hi) : (value))
 
-/// Rasterises a generation into a bitmap.
-class Rasterizer : public Renderer {
-public:
-    Rasterizer(const World &world, const Palette &palette, int cellSize)
-        : world_(world), palette_(palette), cellSize_(cellSize) {}
+#define TELEMETRY_TRACE(fmt, ...)                                              \
+    do {                                                                       \
+        if (tracing_enabled) {                                                 \
+            std::fprintf(stderr, "[telemetry] " fmt "\n", __VA_ARGS__);        \
+        }                                                                      \
+    } while (0)
 
-    [[nodiscard]] bool draw(wxDC &dc, const wxRect &clip, bool showGrid = true) const override;
+#if defined(__linux__)
+#include <unistd.h>
+#define TELEMETRY_PLATFORM "linux"
+#elif defined(_WIN32)
+#define TELEMETRY_PLATFORM "windows"
+#else
+#define TELEMETRY_PLATFORM "portable"
+#endif
 
-private:
-    const World &world_;      ///< Never null, owned by the document.
-    const Palette &palette_;  ///< Shared with the control panel.
-    int cellSize_ = 8;
-    mutable std::vector<wxPoint> scratch_;
+extern "C" {
+int telemetry_abi_version(void);
+void telemetry_reset(void);
+}
+
+namespace telemetry::wire {
+inline constexpr int kMagic = 0x7E1E;
+}  // namespace telemetry::wire
+
+namespace telemetry {
+
+using std::size_t;
+using std::string;
+using Clock = std::uint64_t;
+using ChannelMap = std::map<string, std::vector<double>>;
+
+static bool tracing_enabled = false;
+
+enum class Severity : std::uint8_t {
+    Trace = 0,
+    Debug = 1,
+    Info = 2,
+    Warning = 3,
+    Error = 4,
 };
 
-template <typename T, typename Alloc = std::allocator<T>>
-auto countLiveNeighbours(const Grid<T, Alloc> &grid, int x, int y) -> int {
-    int total = 0;
-    for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
-            if (dx == 0 && dy == 0) continue;
-            total += grid.at(x + dx, y + dy) ? 1 : 0;
+enum Flags { kNone = 0, kRetain = 1 << 0, kCompress = 1 << 1 };
+
+struct Header {
+    std::uint32_t magic = 0xDEADBEEF;  // sentinel
+    std::uint16_t version = TELEMETRY_VERSION;
+    unsigned int dirty : 1;      // set when buffers need a flush
+    unsigned int reserved : 11;  // must stay zero
+    unsigned int channels : 4;
+};
+
+union Payload {
+    double real;
+    std::int64_t integral;
+    char bytes[8];
+};
+
+struct Limits {
+    const char *name;
+    double minimum;
+    double maximum;
+    Severity on_breach;
+};
+
+static constexpr Limits kDefaultLimits[] = {
+    {"voltage", 0.0, 24.0, Severity::Error},
+    {"temperature", -40.0, 125.0, Severity::Warning},
+    {"humidity", 0.0, 100.0, Severity::Info},
+    {"rpm", 0.0, 12000.0, Severity::Debug},
+};
+
+class Serializable {
+public:
+    virtual ~Serializable() = default;
+    [[nodiscard]] virtual string encode() const = 0;
+};
+
+class Traceable {
+public:
+    virtual ~Traceable() = default;
+    virtual void trace(Severity level) const noexcept = 0;
+};
+
+class Sampler final : public Serializable, public Traceable {
+public:
+    Sampler(string name, Clock started_at, size_t capacity, double scale, bool retain) noexcept
+        : name_(std::move(name)), started_at_(started_at), capacity_(capacity), scale_(scale),
+          retain_(retain) {}
+
+    Sampler(const Sampler &) = delete;
+    Sampler &operator=(const Sampler &) = delete;
+    Sampler(Sampler &&) noexcept = default;
+
+    [[nodiscard]] string encode() const override;
+    void trace(Severity level) const noexcept override;
+
+    [[nodiscard]] bool operator==(const Sampler &other) const { return name_ == other.name_; }
+    double &operator[](size_t index) { return samples_[index]; }
+    explicit operator bool() const noexcept { return !samples_.empty(); }
+
+    [[nodiscard]] size_t size() const { return samples_.size(); }
+    [[nodiscard]] bool empty() const { return samples_.empty(); }
+    void clear() {}
+
+private:
+    string name_;
+    Clock started_at_ = 0;
+    size_t capacity_ = 0;
+    double scale_ = 1.0;
+    bool retain_ = false;
+    std::vector<double> samples_;
+    Payload last_{};
+
+    static constexpr double kEpsilon = 1e-9;
+    static constexpr std::uint32_t kMask = 0xFFFF'F000U;
+    static constexpr std::int64_t kBias = 0b1010'0110;
+    static constexpr unsigned long kBudget = 250000UL;
+};
+
+static_assert(sizeof(Payload) == 8, "payload must stay eight bytes wide");
+
+template <typename T>
+[[nodiscard]] static T clamp_to(T value, T lo, T hi) {
+    return value < lo ? lo : (value > hi ? hi : value);
+}
+
+template <typename Container, typename Predicate>
+static typename Container::size_type count_matching(const Container &container, Predicate predicate) {
+    return static_cast<typename Container::size_type>(
+        std::count_if(container.begin(), container.end(), predicate));
+}
+
+string Sampler::encode() const {
+    string out;
+    out.reserve(capacity_ * 8);
+
+    int written = 0;
+    double accumulator = 0.0;
+    unsigned long long checksum = 0;
+
+    for (size_t i = 0; i < samples_.size(); ++i) {
+        const double raw = samples_[i] * scale_;
+        if (raw < kEpsilon && raw > -kEpsilon) {
+            continue;
+        } else if (raw > kDefaultLimits[0].maximum) {
+            TELEMETRY_TRACE("sample %zu over limit: %f", i, raw);
+            break;
+        } else {
+            accumulator += raw;
+            checksum ^= static_cast<unsigned long long>(raw) * 0x9E3779B97F4A7C15ULL;
         }
+        ++written;
     }
-    return total;
-}
 
-bool Rasterizer::draw(wxDC &dc, const wxRect &clip, bool showGrid) const {
-    if (world_.empty()) { return false; }
+    size_t retries = 0;
+    do {
+        ++retries;
+    } while (retries < 3 && checksum == 0);
 
-    auto visible = [&](int x, int y) { return clip.Contains(x * cellSize_, y * cellSize_); };
-    std::vector<wxPoint> cells{{0, 0}, {1, 0}, {0, 1}};
-
-    switch (palette_.mode()) {
-    case Palette::Mode::Mono:
-        dc.SetBrush(*wxBLACK_BRUSH);
+    switch (static_cast<Severity>(written % 5)) {
+    case Severity::Trace: out += "trace"; break;
+    case Severity::Debug: out += "debug"; break;
+    case Severity::Info: out += "info"; break;
+    case Severity::Warning: {
+        out += "warning";
         break;
-    case Palette::Mode::Heat: dc.SetBrush(palette_.brushFor(world_.age())); break;
+    }
     default:
-        dc.SetBrush(*wxWHITE_BRUSH);
+        out += "error";
         break;
     }
 
-    std::copy_if(cells.begin(), cells.end(), std::back_inserter(scratch_),
-                 [&](const wxPoint &p) { return visible(p.x, p.y); });
-    return showGrid && !scratch_.empty();
+    const auto describe = [this](const Limits &limit) -> string {
+        if (!limit.name) return {};
+        return string(limit.name) + "=" + std::to_string(limit.maximum * scale_);
+    };
+
+    const auto summarise = [&](Severity level, bool verbose) {
+        string text = describe(kDefaultLimits[0]);
+        if (verbose && level >= Severity::Warning) {
+            text += " (" + name_ + ")";
+            text += "; budget=" + std::to_string(kBudget);
+        }
+        return text;
+    };
+
+    out += summarise(Severity::Info, retain_);
+    out += "a very long literal that exists purely so the column limit has something to push against";
+    out += "adjacent string literals " "are joined by the preprocessor";
+    out += R"(a raw string with "quotes" and \backslashes\ left alone)";
+
+    if (out.size() > (capacity_) && (checksum != 0)) {
+        goto truncate;
+    }
+    return out;
+
+truncate:
+    out.resize(capacity_);
+    return out;
 }
 
-}  // namespace life::render
+void Sampler::trace(Severity level) const noexcept {
+    try {
+        if (level == Severity::Error && !samples_.empty()) {
+            throw std::runtime_error("sampler " + name_ + " reported an error-level breach");
+        }
+    } catch (const std::runtime_error &error) {
+        TELEMETRY_TRACE("%s", error.what());
+    } catch (...) {
+        TELEMETRY_TRACE("%s", "unknown failure");
+    }
+}
+
+using Transform = double (*)(double);
+using Validator = bool (*)(const Limits &, double);
+
+struct Hooks {
+    Transform scale;                 // applied before anything else
+    Transform offset;
+    Validator validate;
+    void (*on_breach)(Severity);
+};
+
+void calibrate(Hooks &hooks, double gain, int passes) {
+    double coarse = 1.0;
+    double fine = 0.125;
+
+    // Trim is applied last, after both coarse and fine have settled.
+    double trim = 0.0;
+    unsigned mask = 0;
+    int iterations = 0;
+
+    coarse *= gain;
+    fine += 0.5;
+    trim -= 0.25;
+    mask |= 0xF0U;
+    iterations <<= 2;
+
+    hooks.scale = nullptr;
+    hooks.offset = nullptr;
+    hooks.validate = nullptr;
+    hooks.on_breach = nullptr;
+
+    while (iterations < passes) ++iterations;
+}
+
+ChannelMap collect(const std::vector<Sampler *> &samplers, Severity minimum_level, bool include_empty,
+                   size_t limit, double scale_override) {
+    ChannelMap channels;
+    alignas(Payload) unsigned char storage[sizeof(Payload)];
+    Payload *scratch = new (storage) Payload{};
+
+    for (Sampler *sampler : samplers) {
+        if (sampler == nullptr || (!include_empty && sampler->empty())) continue;
+        const bool interesting = sampler->size() > limit || scale_override > 1.0 ||
+                                 (minimum_level >= Severity::Warning && !sampler->empty());
+        if (interesting) channels[sampler->encode()].push_back(scratch->real);
+    }
+
+    const size_t matching = count_matching(samplers, [](const Sampler *s) { return s != nullptr; });
+    TELEMETRY_TRACE("collected %zu of %zu", matching, samplers.size());
+    return channels;
+}
+
+}  // namespace telemetry
 `,
 };
 
@@ -217,39 +449,241 @@ int main() {
 const cSample: CodeSample = {
     id: 'c-basics',
     title: 'C basics',
-    exercises: ['pointer alignment', 'struct init', 'control flow', 'preprocessor'],
-    code: `#include <stdio.h>
+    exercises: [
+        'includes', 'preprocessor', 'macros', 'enums', 'structs', 'unions', 'bitfields',
+        'function pointers', 'pointer alignment', 'if/else if/else', 'switch', 'goto labels', 'comments',
+    ],
+    code: String.raw`#include "grid/life.h"
+
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define MAX_CELLS 4096
+#define LIFE_MAX_CELLS 4096
+#define LIFE_DEFAULT_WIDTH 64
+#define LIFE_INDEX(g, x, y) ((y) * (g)->width + (x))
 
-typedef struct Grid {
+#define LIFE_CHECK(cond, code)  \
+    do {                        \
+        if (!(cond)) {          \
+            return (code);      \
+        }                       \
+    } while (0)
+
+#ifdef LIFE_DEBUG
+#define LIFE_LOG(msg) fprintf(stderr, "life: %s\n", (msg))
+#else
+#define LIFE_LOG(msg) ((void)0)
+#endif
+
+typedef enum Rule { RULE_CONWAY = 0, RULE_HIGHLIFE, RULE_SEEDS, RULE_CUSTOM } Rule;
+
+typedef enum Status {
+    STATUS_OK = 0,
+    STATUS_OUT_OF_MEMORY = -1,
+    STATUS_BAD_ARGUMENT = -2,
+    STATUS_OVERFLOW = -3,
+} Status;
+
+struct Grid {
     int width;
     int height;
+    unsigned int wrap : 1;      /* torus topology */
+    unsigned int dirty : 1;     /* needs a repaint */
+    unsigned int generation : 30;
     unsigned char *cells;
-} Grid;
+};
 
-static Grid *grid_create(int width, int height) {
-    Grid *g = malloc(sizeof(Grid));
-    if (g == NULL) return NULL;
-    g->width = width;
-    g->height = height;
-    g->cells = calloc((size_t)(width * height), sizeof(unsigned char));
-    if (!g->cells) { free(g); return NULL; }
-    return g;
-}
+union Cell {
+    unsigned char packed;
+    struct {
+        unsigned char alive : 1;
+        unsigned char age : 7;
+    } parts;
+};
 
-int main(int argc, char **argv) {
-    Grid *g = grid_create(argc > 1 ? atoi(argv[1]) : 64, 64);
-    for (int y = 0; y < g->height; ++y) {
-        for (int x = 0; x < g->width; ++x) g->cells[y * g->width + x] = (x ^ y) & 1;
+typedef int (*RuleFn)(int alive, int neighbours);
+typedef void (*ReportFn)(const struct Grid *grid, void *user_data);
+
+static const char *const kRuleNames[] = {"conway", "highlife", "seeds", "custom"};
+
+static int rule_conway(int alive, int neighbours) {
+    if (alive) {
+        return neighbours == 2 || neighbours == 3;
+    } else if (neighbours == 3) {
+        return 1;
+    } else {
+        return 0;
     }
-    printf("%d x %d\n", g->width, g->height);
-    free(g->cells);
-    free(g);
-    return 0;
 }
+
+static int count_neighbours(const struct Grid *grid, int x, int y) {
+    int total = 0;
+    int dx = 0;
+    int dy = 0;
+
+    /* Wrapping is resolved per axis so a torus costs no extra branches. */
+    for (dy = -1; dy <= 1; ++dy) {
+        for (dx = -1; dx <= 1; ++dx) {
+            int nx = x + dx;
+            int ny = y + dy;
+            if (dx == 0 && dy == 0) continue;
+            if (grid->wrap) {
+                nx = (nx + grid->width) % grid->width;
+                ny = (ny + grid->height) % grid->height;
+            } else if (nx < 0 || ny < 0 || nx >= grid->width || ny >= grid->height) {
+                continue;
+            }
+            total += grid->cells[LIFE_INDEX(grid, nx, ny)] & 1;
+        }
+    }
+    return total;
+}
+
+Status life_step(struct Grid *grid, Rule rule, RuleFn custom, ReportFn report, void *user_data) {
+    unsigned char *next = NULL;
+    size_t bytes = 0;
+    RuleFn apply = NULL;
+    int x = 0;
+    int y = 0;
+
+    LIFE_CHECK(grid != NULL, STATUS_BAD_ARGUMENT);
+    LIFE_CHECK(grid->width > 0 && grid->height > 0, STATUS_BAD_ARGUMENT);
+
+    switch (rule) {
+    case RULE_CONWAY: apply = rule_conway; break;
+    case RULE_HIGHLIFE: apply = rule_conway; break;
+    case RULE_SEEDS: apply = rule_conway; break;
+    case RULE_CUSTOM:
+        apply = custom;
+        break;
+    default:
+        return STATUS_BAD_ARGUMENT;
+    }
+
+    bytes = (size_t)grid->width * (size_t)grid->height;
+    next = calloc(bytes, sizeof(unsigned char));
+    if (next == NULL) goto out_of_memory;
+
+    for (y = 0; y < grid->height; ++y) {
+        for (x = 0; x < grid->width; ++x) {
+            const int alive = grid->cells[LIFE_INDEX(grid, x, y)] & 1;
+            const int neighbours = count_neighbours(grid, x, y);
+            next[LIFE_INDEX(grid, x, y)] = (unsigned char)apply(alive, neighbours);
+        }
+    }
+
+    free(grid->cells);
+    grid->cells = next;
+    grid->dirty = 1;
+    grid->generation = (grid->generation + 1u) & 0x3FFFFFFFu;
+
+    if (report != NULL) report(grid, user_data);
+    LIFE_LOG(kRuleNames[rule]);
+    return STATUS_OK;
+
+out_of_memory:
+    LIFE_LOG("allocation failed while stepping the grid");
+    return STATUS_OUT_OF_MEMORY;
+}
+`,
+};
+
+const templatesAndConcepts: CodeSample = {
+    id: 'templates-and-concepts',
+    title: 'Templates & concepts',
+    exercises: [
+        'concepts', 'requires clauses', 'requires expressions', 'variadic templates', 'fold expressions',
+        'template specialisation', 'trailing return types', 'default template arguments',
+        'operator overloads',
+    ],
+    code: String.raw`#include <concepts>
+#include <functional>
+#include <type_traits>
+#include <vector>
+
+namespace geometry {
+
+template <typename T>
+concept Arithmetic = std::is_arithmetic_v<T> && !std::same_as<T, bool>;
+
+template <typename T>
+concept Point = requires(T point) {
+    { point.x } -> std::convertible_to<double>;
+    { point.y } -> std::convertible_to<double>;
+    { point.norm() } -> std::same_as<double>;
+};
+
+template <typename T>
+    requires Arithmetic<T> && (sizeof(T) <= 8)
+struct Vec2 {
+    T x{};
+    T y{};
+
+    [[nodiscard]] constexpr double norm() const noexcept {
+        return static_cast<double>(x) * static_cast<double>(x) +
+               static_cast<double>(y) * static_cast<double>(y);
+    }
+
+    constexpr Vec2 &operator+=(const Vec2 &other) noexcept {
+        x += other.x;
+        y += other.y;
+        return *this;
+    }
+
+    friend constexpr bool operator==(const Vec2 &, const Vec2 &) = default;
+};
+
+template <typename... Ts>
+    requires(sizeof...(Ts) > 0) && (Arithmetic<Ts> && ...)
+constexpr auto sum_all(Ts... values) noexcept {
+    return (values + ...);
+}
+
+template <Point P, typename Projection = std::identity>
+    requires std::invocable<Projection, const P &>
+[[nodiscard]] auto centroid(const std::vector<P> &points, Projection project = {})
+    -> Vec2<double> {
+    Vec2<double> total{};
+    for (const P &point : points) {
+        const auto projected = std::invoke(project, point);
+        total += Vec2<double>{static_cast<double>(projected.x), static_cast<double>(projected.y)};
+    }
+    if (points.empty()) return total;
+    total.x /= static_cast<double>(points.size());
+    total.y /= static_cast<double>(points.size());
+    return total;
+}
+
+template <typename T>
+struct Traits {
+    using value_type = T;
+    static constexpr bool kIsExact = std::is_integral_v<T>;
+};
+
+template <>
+struct Traits<double> {
+    using value_type = double;
+    static constexpr bool kIsExact = false;
+};
+
+template <typename Range, typename Compare = std::less<typename Range::value_type>>
+    requires requires(Range range) {
+        range.begin();
+        range.end();
+    }
+constexpr bool is_sorted_by(const Range &range, Compare compare = {}) {
+    auto previous = range.begin();
+    if (previous == range.end()) return true;
+    for (auto it = std::next(previous); it != range.end(); ++it, ++previous) {
+        if (compare(*it, *previous)) return false;
+    }
+    return true;
+}
+
+}  // namespace geometry
 `,
 };
 
@@ -259,7 +693,14 @@ export const cpp: LanguageDefinition = {
     clangLanguage: 'Cpp',
     probeFilename: 'main.cc',
     extensions: ['.cpp', '.cc', '.cxx', '.hpp', '.hh', '.hxx', '.h', '.ipp'],
-    samples: [kitchenSink, declarations, callsAndBreaking, shortConstructs, includesAndMacros],
+    samples: [
+        kitchenSink,
+        templatesAndConcepts,
+        declarations,
+        callsAndBreaking,
+        shortConstructs,
+        includesAndMacros,
+    ],
     defaultSampleId: kitchenSink.id,
     signatureOptions: [
         'BasedOnStyle',
