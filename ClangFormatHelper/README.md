@@ -44,11 +44,22 @@ in and the same analysis runs against that instead.
 ```bash
 npm install
 npm run dev          # http://localhost:5173
-npm run build        # static bundle in dist/ — drop it on any static host
+npm run build        # static bundle in dist/
+npm run release      # build + precompress (.br/.gz) — what you deploy
 npm run preview      # serve the built bundle on :4173
 npm test             # engine tests, against the real wasm binary in Node
 npm run test:e2e     # browser test: needs `npm run preview` running in another shell
+npm run check:deploy -- https://your.host/path/   # verify a live deployment
 ```
+
+## Deploying
+
+It is a static site, so any web server will do, but a few details matter a great deal for a 2.5 MB WebAssembly
+module: its MIME type, compressing it, and caching hashed assets for good while never caching `index.html`.
+[docs/deployment.md](docs/deployment.md) walks through **nginx** and **Apache** (including shared hosting via
+`.htaccess`), with ready-to-use configs in [`deploy/`](deploy). `npm run check:deploy` then verifies the live
+result, including decoding every compressed response to prove nothing was compressed twice. Every config was
+tested against real servers built from source; the guide lists exactly what was and was not covered.
 
 `npm run build` regenerates nothing, but it **does** re-validate the committed option catalog against the actual
 wasm binary and fails if they have drifted apart.
@@ -140,6 +151,7 @@ that turned out to be false during development.
 | Impact analysis: dim/rank/badge, per-option micro-previews                 | done  |
 | Syntax highlighting across every code view, including the editable sample  | done  |
 | Selectable light / dark / match-system theme                               | done  |
+| Deployment: nginx + Apache configs, precompression, a live-site checker     | done  |
 | Infer a config from already-formatted code                                 | not yet |
 | Inline YAML diagnostics, share links, offline PWA                          | not yet |
 

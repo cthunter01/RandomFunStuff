@@ -160,7 +160,6 @@ function reducer(state: AppState, action: Action): AppState {
             localStorage.setItem('cfh.layout', action.value);
             return { ...state, layoutId: action.value };
         case 'setTheme':
-            applyTheme(action.value);
             return { ...state, theme: action.value };
         case 'setSortMode':
             localStorage.setItem('cfh.sort', action.value);
@@ -210,6 +209,15 @@ export function StoreProvider({ children }: { children: ReactNode }): React.JSX.
     const sample = state.samples[state.doc.languageId] ?? '';
     const fileText = useMemo(() => toFileText(state.doc), [state.doc]);
     const inlineStyle = useMemo(() => toInlineStyle(state.doc), [state.doc]);
+
+    // The inline script in index.html normally applies the saved theme before first
+    // paint. A strict Content-Security-Policy without that script's hash blocks it,
+    // and then the page would render in the wrong theme while the menu claimed
+    // otherwise. So the app applies it too: under such a policy you get a brief
+    // flash, never a wrong theme. (Kept out of the reducer, which StrictMode runs twice.)
+    useEffect(() => {
+        applyTheme(state.theme);
+    }, [state.theme]);
 
     useEffect(() => {
         let cancelled = false;

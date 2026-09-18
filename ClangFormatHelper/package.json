@@ -13,7 +13,9 @@
         "typecheck": "tsc -b --noEmit",
         "catalog:generate": "tsx scripts/generate-catalog.ts",
         "catalog:check": "tsx scripts/generate-catalog.ts --check",
-        "test:e2e": "tsx tests/e2e/smoke.mts"
+        "test:e2e": "tsx tests/e2e/smoke.mts",
+        "release": "npm run build && tsx scripts/precompress.ts",
+        "check:deploy": "tsx scripts/check-deployment.ts"
     },
     "dependencies": {
         "@codemirror/commands": "^6.8.1",

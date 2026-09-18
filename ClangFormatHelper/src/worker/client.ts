@@ -26,14 +26,21 @@ export function createFormatterClient(): FormatterClient {
     let nextId = 1;
 
     let signalReady: () => void;
-    const ready = new Promise<void>((resolve) => {
+    let signalFailed: (error: Error) => void;
+    const ready = new Promise<void>((resolve, reject) => {
         signalReady = resolve;
+        signalFailed = reject;
     });
 
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
         const response = event.data;
         if (response.ok && response.kind === 'ready') {
             signalReady();
+            return;
+        }
+        // id 0 is the boot handshake; a failure there means the module never loaded.
+        if (!response.ok && response.id === 0) {
+            signalFailed(new Error(response.message));
             return;
         }
         const waiter = pending.get(response.id);

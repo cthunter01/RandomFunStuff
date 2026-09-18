@@ -3,13 +3,14 @@
  * the option's official documentation example.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useStore } from '../state/store.tsx';
 import { getLanguage } from '../../core/languages/registry.ts';
 import { diffLines } from '../../core/diff/lineDiff.ts';
 import { catalog } from '../state/store.tsx';
 import { Code, CodeLine } from '../components/Code.tsx';
 import { CodeEditor } from '../components/CodeEditor.tsx';
+import { copyText } from '../components/clipboard.ts';
 import { highlightLines } from '../highlight/highlight.ts';
 import { useGrammar } from '../highlight/useGrammar.ts';
 
@@ -132,11 +133,20 @@ export function DocExamplePanel(): React.JSX.Element {
 
 export function YamlPanel(): React.JSX.Element {
     const { state, fileText, importFile } = useStore();
+    const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
     return (
         <div className="panel code-panel">
             <div className="panel-toolbar">
                 <strong>.clang-format</strong>
-                <button onClick={() => void navigator.clipboard.writeText(fileText)}>Copy</button>
+                <button
+                    onClick={async () => {
+                        setCopyState((await copyText(fileText)) ? 'copied' : 'failed');
+                        setTimeout(() => setCopyState('idle'), 1500);
+                    }}
+                    title={copyState === 'failed' ? 'Your browser blocked the copy — select the text instead' : undefined}
+                >
+                    {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy'}
+                </button>
                 <button
                     onClick={() => {
                         const blob = new Blob([fileText], { type: 'text/yaml' });

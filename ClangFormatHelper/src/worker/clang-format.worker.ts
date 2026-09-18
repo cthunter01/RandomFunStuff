@@ -13,14 +13,30 @@ let runtime: Runtime | null = null;
 
 async function boot(): Promise<Runtime> {
     if (runtime) return runtime;
-    // compileStreaming needs the right MIME type; fall back for hosts that serve
-    // .wasm as octet-stream, which is common on simple static hosting.
     const response = await fetch(wasmUrl);
+    if (!response.ok) {
+        throw new Error(`The clang-format module failed to download (HTTP ${response.status} for ${response.url}).`);
+    }
     let compiled: WebAssembly.Module;
     try {
         compiled = await WebAssembly.compileStreaming(response.clone());
-    } catch {
-        compiled = await WebAssembly.compile(await response.arrayBuffer());
+    } catch (streamingError) {
+        // compileStreaming insists on Content-Type: application/wasm. Plenty of
+        // servers still send octet-stream, so fall back rather than fail — but say
+        // so, because it is a server misconfiguration with a one-line fix.
+        const type = response.headers.get('content-type') ?? '(none)';
+        if (!/^application\/wasm\b/.test(type)) {
+            console.warn(
+                `clang-format module served as "${type}" instead of application/wasm; ` +
+                    'using the slower non-streaming path. See docs/deployment.md.',
+            );
+        }
+        try {
+            compiled = await WebAssembly.compile(await response.arrayBuffer());
+        } catch (error) {
+            // Most often a Content-Security-Policy without 'wasm-unsafe-eval'.
+            throw error instanceof Error ? error : streamingError;
+        }
     }
     runtime = createRuntime(compiled);
     return runtime;
@@ -68,4 +84,16 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
     }
 };
 
-void boot().then(() => post({ id: 0, ok: true, kind: 'ready' }));
+// Report a failed boot instead of leaving the page on "Loading…" forever. The
+// likeliest cause in the wild is a Content-Security-Policy without
+// 'wasm-unsafe-eval', which otherwise fails silently inside this worker.
+boot().then(
+    () => post({ id: 0, ok: true, kind: 'ready' }),
+    (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        const hint = /CSP|Content.Security|blocked/i.test(message)
+            ? " The server's Content-Security-Policy must allow 'wasm-unsafe-eval'."
+            : '';
+        post({ id: 0, ok: false, message: `${message.replace(/\.?$/, '.')}${hint}` });
+    },
+);
