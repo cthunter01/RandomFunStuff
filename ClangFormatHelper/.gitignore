@@ -3,3 +3,5 @@ dist/
 .vite/
 *.local
 tsconfig.tsbuildinfo
+.build/
+vendor/

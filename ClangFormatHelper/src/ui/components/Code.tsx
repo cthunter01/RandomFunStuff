@@ -27,14 +27,20 @@ export const CodeLine = memo(function CodeLine({ line }: { line: HighlightedLine
     );
 });
 
+/** Per-line decoration: 0-based line index → a class added to that line, e.g. `mark-warning`. */
+export type LineMarks = ReadonlyMap<number, string>;
+
 export const Code = memo(function Code({
     code,
     language,
     className = '',
+    marks,
 }: {
     code: string;
     language: string;
     className?: string;
+    /** Must be memoised by the caller, or every render repaints every line. */
+    marks?: LineMarks;
 }): React.JSX.Element {
     // Repaints once the grammar lands; until then the same code renders unstyled.
     useGrammar(language);
@@ -42,7 +48,7 @@ export const Code = memo(function Code({
     return (
         <pre className={`code ${className}`}>
             {lines.map((line, i) => (
-                <div key={i} className="code-line">
+                <div key={i} className={marks?.has(i) ? `code-line ${marks.get(i)}` : 'code-line'}>
                     <CodeLine line={line} />
                 </div>
             ))}

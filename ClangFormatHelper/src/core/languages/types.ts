@@ -49,4 +49,13 @@ export interface LanguageDefinition {
      * the impact engine is the authority on what actually matters.
      */
     readonly signatureOptions: readonly string[];
+    /**
+     * How clang-tidy compiles this language. Absent for languages clang-tidy
+     * cannot analyse (it is a C-family tool; clang-format is not), which is how
+     * the tidy UI knows not to offer them.
+     */
+    readonly tidy?: {
+        /** Default compiler flags, as typed into a command line. */
+        readonly compileFlags: string;
+    };
 }

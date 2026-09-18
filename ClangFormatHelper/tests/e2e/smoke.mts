@@ -5,7 +5,7 @@
  * exists in a browser, and that is exactly the part a bundler can silently break.
  */
 import puppeteer from 'puppeteer-core';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -231,6 +231,109 @@ try {
     }
     console.log('OK  editing while sorted by impact also leaves every row in place');
     await page.screenshot({ path: path.join(shotDir, 'analysed.png') as `${string}.png`, fullPage: false });
+
+    // ---------------------------------------------------------------------
+    // clang-tidy. A separate wasm, worker pool and store; the sample, layout and
+    // theme are shared with clang-format and must survive the switch.
+    // ---------------------------------------------------------------------
+    await page.select('.toolbar select[aria-label="Layout"]', 'workbench');
+    const formatFileBefore = await page.$eval('.output.yaml', (n) => n.textContent ?? '');
+    await page.click('.tool-switch button:nth-child(2)');
+    await page.waitForFunction(() => document.querySelectorAll('.check-row').length > 500, { timeout: 120_000 });
+    await page.waitForSelector('.finding', { timeout: 120_000 });
+    const tidyStatus = await page.$eval('.code-panel .panel-toolbar .hint', (n) => n.textContent ?? '');
+    console.log(`OK  clang-tidy booted in the browser and reported live findings (${tidyStatus.trim()})`);
+
+    const marked = await page.$$eval('.editor-backdrop .code-line.mark-warning', (n) => n.length);
+    if (marked === 0) fail('findings are listed but none is marked on the sample');
+    const firstFinding = await page.$eval('.finding .where', (n) => Number((n.textContent ?? '').split(':')[0]));
+    const markedLines = await page.$$eval('.editor-backdrop .code-line', (lines) =>
+        lines.map((l, i) => (l.classList.contains('mark-warning') || l.classList.contains('mark-error') ? i + 1 : 0)),
+    );
+    if (!markedLines.includes(firstFinding)) fail(`finding on line ${firstFinding} is not marked on that line`);
+    console.log(`OK  ${marked} sample lines marked, on the lines the findings name`);
+
+    const tidyFile = () => page.$eval('.output.yaml', (n) => n.textContent ?? '');
+    if (!(await tidyFile()).includes('bugprone-*')) fail(`.clang-tidy pane does not show the starting point:\n${await tidyFile()}`);
+
+    // Enabling a check: the file says so, the findings follow, and no row moves.
+    const readChecks = () => page.$$eval('.check-row .check-name', (n) => n.map((x) => x.textContent ?? ''));
+    const checksBefore = await readChecks();
+    await page.evaluate(() => {
+        const row = [...document.querySelectorAll('.check-row')].find(
+            (r) => r.querySelector('.check-name')?.textContent === 'modernize-use-trailing-return-type',
+        );
+        (row?.querySelector('input[type=checkbox]') as HTMLInputElement).click();
+    });
+    await page.waitForFunction(
+        () => (document.querySelector('.output.yaml')?.textContent ?? '').includes('modernize-use-trailing-return-type'),
+    );
+    await page.waitForFunction(
+        () => [...document.querySelectorAll('.finding .which')].some((n) => n.textContent?.includes('modernize-use-trailing-return-type')),
+        { timeout: 60_000 },
+    );
+    if ((await readChecks()).join('|') !== checksBefore.join('|')) fail('enabling a check reordered the check rail');
+    console.log('OK  enabling a check updates .clang-tidy and the findings, and moves no row');
+
+    // An option lands in CheckOptions.
+    await page.evaluate(() => {
+        const row = [...document.querySelectorAll('.check-row')].find(
+            (r) => r.querySelector('.check-name')?.textContent === 'modernize-use-trailing-return-type',
+        );
+        (row?.querySelector('.disclosure') as HTMLButtonElement).click();
+    });
+    await page.waitForSelector('.option-detail .option-editor select');
+    await page.select('.option-detail .option-editor select', 'none');
+    await page.waitForFunction(() =>
+        /CheckOptions:[\s\S]*modernize-use-trailing-return-type\.TransformLambdas: none/.test(
+            document.querySelector('.output.yaml')?.textContent ?? '',
+        ),
+    );
+    console.log('OK  setting an option writes it to CheckOptions');
+
+    // Importing a file replaces the config, and survives the round trip.
+    const imported = path.join(mkdtempSync(path.join(tmpdir(), 'cfh-tidy-')), '.clang-tidy');
+    writeFileSync(imported, "Checks: '-*,performance-*'\nCheckOptions:\n  performance-for-range-copy.WarnOnAllAutoCopies: true\n");
+    const upload = await page.$('.import input[type=file]');
+    await upload!.uploadFile(imported);
+    await page.waitForFunction(() => (document.querySelector('input[aria-label="Checks globs"]') as HTMLInputElement)?.value === '-*,performance-*');
+    if (!(await tidyFile()).includes('performance-for-range-copy.WarnOnAllAutoCopies')) fail('import lost the CheckOptions');
+    console.log('OK  importing a .clang-tidy replaces the config');
+
+    // The analysis: every check once, then the option sweep.
+    await page.$$eval('.toolbar button', (buttons) => {
+        (buttons.find((b) => /Analyse|Re-analyse/.test(b.textContent ?? '')) as HTMLButtonElement | undefined)?.click();
+    });
+    await page.waitForFunction(() => /checks fire here/.test(document.querySelector('.toolbar')?.textContent ?? ''), {
+        timeout: 300_000,
+        polling: 500,
+    });
+    const tidySummary = await page.$eval('.toolbar .progress', (n) => n.textContent ?? '');
+    const firing = Number(/^(\d+)/.exec(tidySummary.trim())?.[1] ?? 0);
+    if (firing < 20) fail(`expected the kitchen sink to trip many checks, got "${tidySummary}"`);
+    const impactBadges = await page.$$eval('.option-detail .badge.live, .option-detail .badge.dim', (n) => n.length);
+    console.log(`OK  tidy analysis completed — ${tidySummary.trim()} (${impactBadges} option badges in the open check)`);
+
+    await page.select('.toolbar select[aria-label="Layout"]', 'card-feed');
+    await page.waitForSelector('.tidy-card', { timeout: 30_000 });
+    const cards = await page.$$eval('.tidy-card', (n) => n.length);
+    const previews = await page.$$eval('.tidy-card .micro-preview', (n) => n.length);
+    if (cards !== firing) fail(`card feed shows ${cards} cards for ${firing} firing checks`);
+    if (previews === 0) fail('no card has a fix preview');
+    console.log(`OK  card feed: ${cards} cards, ${previews} with a before/after of the fix`);
+    await page.screenshot({ path: path.join(shotDir, 'tidy-card-feed.png') as `${string}.png` });
+    await page.select('.toolbar select[aria-label="Layout"]', 'workbench');
+
+    // Back to clang-format: nothing lost on either side.
+    await page.click('.tool-switch button:nth-child(1)');
+    await page.waitForSelector('.option-wrap', { timeout: 30_000 });
+    if ((await page.$eval('.output.yaml', (n) => n.textContent ?? '')) !== formatFileBefore) {
+        fail('switching to clang-tidy and back changed the .clang-format');
+    }
+    await page.click('.tool-switch button:nth-child(2)');
+    await page.waitForSelector('.check-row', { timeout: 30_000 });
+    if (!(await tidyFile()).includes('performance-for-range-copy.WarnOnAllAutoCopies')) fail('switching tools lost the .clang-tidy');
+    console.log('OK  switching tools keeps both configs');
 
     const fatal = consoleErrors.filter((e) => !/Download the React DevTools/.test(e));
     if (fatal.length > 0) fail(`console errors:\n  ${fatal.join('\n  ')}`);

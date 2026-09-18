@@ -31,15 +31,19 @@ npm run check:deploy -- https://clang-format.example.com/
 
 Five things. Every other part of the configs is defence in depth.
 
-1. **Serve `.wasm` as `application/wasm`.** Browsers only *stream*-compile WebAssembly with exactly that type.
+1. **Serve `.wasm` as `application/wasm`.** There are two modules — clang-format, and clang-tidy for the Tidy
+   side — and browsers only *stream*-compile WebAssembly served with exactly that type.
    Older nginx and Apache packages send `application/octet-stream`. The app still works then, via a slower
    path, and logs a console warning naming the problem.
 2. **Cache `assets/` forever and `index.html` never.** Every file under `assets/` has a content hash in its
    name, so a URL there never changes and can be cached for a year with `immutable`. `index.html` is the only
    file that names those hashes, so it must always be revalidated. If it isn't, browsers keep an old copy
    that points at files a later deploy removed.
-3. **Compress, including the wasm.** The module is 2.5 MB: ~1 MB gzipped, ~840 KB with brotli. nginx's
-   default `gzip_types` does *not* include `application/wasm`, so it has to be listed.
+3. **Compress, including the wasm and the tarball.** clang-format's module is 2.5 MB: ~1 MB gzipped, ~840 KB
+   with brotli. clang-tidy's is 43 MB: 11.6 MB gzipped, 7.4 MB with brotli; and the standard headers it analyses
+   against are a 22.8 MB `.tar`: 2.5 MB gzipped, 1.7 MB with brotli. Those two are fetched only when someone opens
+   Tidy, but uncompressed they would be a 66 MB wait. nginx's default `gzip_types` includes neither
+   `application/wasm` nor `application/x-tar`, so both are listed.
 4. **No single-page-app fallback.** The app has no client-side routes. A `try_files … /index.html` fallback
    answers a request for a missing asset with the HTML page and a 200. The browser then fails with a baffling
    "not a valid JavaScript MIME type" error instead of a plain 404.
@@ -59,9 +63,15 @@ npm run release
 
 `release` runs the normal build, then writes a `.gz` and a `.br` next to every compressible file. The web
 server serves those directly instead of compressing on each request. That matters here because
-maximum-effort brotli takes seconds on the wasm module, far too slow per request and trivial to do once. It
-cuts the whole payload from 6.5 MB to 1.7 MB. A plain `npm run build` also deploys fine; the configs fall back
-to compressing on the fly (less tightly).
+maximum-effort brotli takes seconds per megabyte — about a minute and a half for clang-tidy's module — far too
+slow per request and fine to do once. It cuts clang-format's payload from 6.5 MB to 1.7 MB, and clang-tidy's
+from 66 MB to under 9 MB. A plain `npm run build` also deploys fine; the configs fall back to compressing on the
+fly (less tightly).
+
+The build needs the clang-tidy module, which is not in the repository: `npm run build` fetches it into
+`vendor/` from the pinned GitHub release (once; after that it only verifies the checksum). A build machine
+without network access needs `vendor/clang-tidy/` provided some other way — see
+`tools/clang-tidy-wasm/README.md`.
 
 `dist/` also contains **source maps** (`*.map`, about 3 MB). Browsers only fetch them when developer tools are
 open, so shipping them costs visitors nothing and makes bug reports readable. If you would rather not publish
@@ -181,8 +191,8 @@ object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'self'
 
 Two parts are specific to this app:
 
-- **`'wasm-unsafe-eval'` is mandatory.** Without it the browser refuses to compile the clang-format module, and
-  the page reports *"Could not start clang-format: … blocked by CSP"*.
+- **`'wasm-unsafe-eval'` is mandatory.** Without it the browser refuses to compile either module, and the page
+  reports *"Could not start clang-format: … blocked by CSP"* (or *clang-tidy*, on the Tidy side).
 - **The `sha256-…` hash** allows the small inline script in `index.html` that applies the saved light/dark
   theme before the page first paints. If that script ever changes, recompute the hash after building:
 
@@ -207,17 +217,21 @@ That catches double compression, which nothing else will point you at. It exits 
 can gate a CI deploy. A correct Apache deployment looks like:
 
 ```
-ok    wasm module: served as application/wasm
-ok    wasm module: cached long-term (Cache-Control: public, max-age=31536000, immutable)
-ok    wasm with Accept-Encoding br: br, 840 KB, byte-identical once decoded
-ok    wasm with Accept-Encoding br: still cached long-term
-ok    wasm with Accept-Encoding gzip: gzip, 1046 KB, byte-identical once decoded
+ok    clang-format module: served as application/wasm
+ok    clang-format module: cached long-term (Cache-Control: public, max-age=31536000, immutable)
+ok    clang-tidy module: served as application/wasm
+ok    clang-tidy headers: served as application/x-tar
+ok    clang-format module with Accept-Encoding br: br, 840 KB, byte-identical once decoded
+ok    clang-tidy module with Accept-Encoding br: br, 7271 KB, byte-identical once decoded
+ok    clang-tidy module with Accept-Encoding br: still cached long-term
+ok    clang-tidy headers with Accept-Encoding br: br, 1637 KB, byte-identical once decoded
 ok    a missing asset is a real 404
 ...
-27 passed, 0 warning(s), 0 failure(s)
+49 passed, 0 warning(s), 0 failure(s)
 ```
 
-On nginx without `ngx_brotli`, expect one warning: brotli requests get the uncompressed file.
+On nginx without `ngx_brotli`, expect three warnings, one per large file: brotli requests get the uncompressed
+file (gzip still works).
 
 ## Troubleshooting
 
@@ -225,6 +239,9 @@ On nginx without `ngx_brotli`, expect one warning: brotli requests get the uncom
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
 | "Could not start clang-format: … blocked by CSP"                    | The Content-Security-Policy lacks `'wasm-unsafe-eval'`. Add it to `script-src`.                                            |
 | "Could not start clang-format: … failed to download (HTTP 404)"     | The `.wasm` file is missing or the `root` is wrong. Check that `assets/` was uploaded.                                      |
+| "Could not start clang-tidy: … headers failed to download"          | The `.tar` in `assets/` is missing — some upload filters skip archives. Upload it like any other asset.                     |
+| "Loading clang-tidy" takes a long time                              | It is 66 MB uncompressed. Check that the `.wasm` and `.tar` are served compressed (`check:deploy` reports it).              |
+| `npm run build` fails at `tidy:fetch` with HTTP 404                 | The release named in `tools/clang-tidy-wasm/release.json` is not published. Build it locally (`npm run tidy:build`).       |
 | Console: "not a valid JavaScript MIME type" / module script fails   | A single-page-app fallback is returning `index.html` for a missing file. Remove it; `check:deploy` flags this.              |
 | Console warning: module served as "application/octet-stream"        | Old `mime.types` without wasm. The configs force the right type; if you wrote your own, add `application/wasm`.             |
 | Page loads, then fails with a content/decoding error                | A precompressed file is compressed a second time on the fly. Use the rules file as-is; `check:deploy` catches this.         |
@@ -249,6 +266,12 @@ test (`npm run test:e2e`) in Firefox 154. Scenarios covered:
 - the upload procedure: two consecutive builds, old assets still served after the second deploy, and pruning
   removing only files that no longer ship
 - plain HTTP on a LAN address, where `navigator.clipboard` is unavailable and Copy uses its fallback
+
+Re-verified when clang-tidy was added, against the same server builds: nginx at the site root, and Apache as a
+virtual host, as `.htaccess` in a sub-directory, under an `Alias` with `RewriteBase`, and with on-the-fly
+compression only. Every scenario passed `check:deploy` with the new module and tarball included (49 checks on
+Apache, 40 on nginx plus the three brotli warnings above). The browser test ran against `vite preview` rather
+than against these servers.
 
 Not tested: TLS termination and certbot (no public DNS here), the `ngx_brotli` module, distribution-packaged
 builds of either server, and browsers other than Firefox.

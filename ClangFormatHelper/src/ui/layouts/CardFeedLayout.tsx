@@ -1,29 +1,30 @@
 /**
- * Sample docked at the top, a scrolling feed of option cards below — each card
- * showing what that option would do to the code above it.
+ * Sample docked at the top, a scrolling feed of cards below — each card showing
+ * what that setting would do to the code above it.
  */
 
 import { useState } from 'react';
-import { OptionCardFeedPanel } from '../panels/OptionCardFeedPanel.tsx';
-import { SamplePanel, YamlPanel } from '../panels/CodePanels.tsx';
+import { useActiveTool } from '../tools/registry.tsx';
 
 export function CardFeedLayout(): React.JSX.Element {
-    const [showYaml, setShowYaml] = useState(false);
+    const [showFile, setShowFile] = useState(false);
+    const tool = useActiveTool();
+    const { CardFeed, Sample, File } = tool.panels;
     return (
         <div className="layout card-feed-layout">
             <section className="docked">
                 <nav className="tabs">
-                    <button className={!showYaml ? 'active' : ''} onClick={() => setShowYaml(false)}>
+                    <button className={!showFile ? 'active' : ''} onClick={() => setShowFile(false)}>
                         Your code
                     </button>
-                    <button className={showYaml ? 'active' : ''} onClick={() => setShowYaml(true)}>
-                        .clang-format
+                    <button className={showFile ? 'active' : ''} onClick={() => setShowFile(true)}>
+                        {tool.fileName}
                     </button>
                 </nav>
-                {showYaml ? <YamlPanel /> : <SamplePanel />}
+                {showFile ? <File /> : <Sample />}
             </section>
             <section className="feed">
-                <OptionCardFeedPanel />
+                <CardFeed />
             </section>
         </div>
     );

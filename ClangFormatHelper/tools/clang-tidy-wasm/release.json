@@ -1,0 +1,19 @@
+{
+    "llvmVersion": "23.1.1",
+    "clangMajor": "23",
+    "analysisTriple": "x86_64-unknown-linux-musl",
+    "releaseTag": "clang-tidy-wasm-23.1.1-1",
+    "baseUrl": "https://github.com/cthunter01/RandomFunStuff/releases/download/clang-tidy-wasm-23.1.1-1/",
+    "files": {
+        "wasm": {
+            "name": "clang-tidy-23.1.1.wasm",
+            "bytes": 42873722,
+            "sha256": "e2642265e3eb5e4836a4bf0f106acaf810f171e948a763646ace386551f44000"
+        },
+        "sysroot": {
+            "name": "clang-tidy-sysroot-23.1.1.tar",
+            "bytes": 22824960,
+            "sha256": "5dc6570e4e9a06a8850e34001b6f9b3dc62a4e75d185c6723bb5a9d6971c0601"
+        }
+    }
+}

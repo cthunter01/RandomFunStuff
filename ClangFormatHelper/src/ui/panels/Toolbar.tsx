@@ -1,25 +1,41 @@
 /**
- * The app-level controls: what you are configuring, and how you want to look at it.
+ * The app-level controls: which tool, what you are configuring, and how you want
+ * to look at it.
  *
- * The layout switcher lives here because a layout is a view over one shared
- * store — switching it keeps every bit of state, which is the point.
+ * The tool and layout switchers live here because both are views over shared
+ * state — switching either keeps every bit of it, which is the point. Everything
+ * tool-specific comes from the active tool's own toolbar slots.
  */
 
-import { catalog, useStore, type LayoutId, type ThemeChoice } from '../state/store.tsx';
+import { useStore, type LayoutId, type ThemeChoice, type ToolId } from '../state/store.tsx';
 import { listLanguages } from '../../core/languages/registry.ts';
-import { BASE_STYLES } from '../../core/catalog/types.ts';
 import { layouts } from '../layouts/registry.tsx';
-import { summarise } from '../../core/analysis/impact.ts';
+import { tools, useActiveTool } from '../tools/registry.tsx';
 
 export function Toolbar(): React.JSX.Element {
-    const { state, dispatch, runImpact } = useStore();
-    const impactSummary = state.impact ? summarise(state.impact) : null;
+    const { state, dispatch } = useStore();
+    const tool = useActiveTool();
+    const { ToolbarControls, ToolbarStatus } = tool.panels;
 
     return (
         <header className="toolbar">
             <div className="brand">
-                <strong>clang-format Helper</strong>
-                <span className="version">clang-format {catalog.clangFormatVersion}</span>
+                <strong>{tool.label} Helper</strong>
+                <span className="version">builds a {tool.fileName}</span>
+            </div>
+
+            <div className="tool-switch" role="tablist" aria-label="Tool">
+                {tools.map((t) => (
+                    <button
+                        key={t.id}
+                        role="tab"
+                        aria-selected={t.id === state.toolId}
+                        className={t.id === state.toolId ? 'active' : ''}
+                        onClick={() => dispatch({ type: 'setTool', value: t.id as ToolId })}
+                    >
+                        {t.label}
+                    </button>
+                ))}
             </div>
 
             <label>
@@ -37,20 +53,7 @@ export function Toolbar(): React.JSX.Element {
                 </select>
             </label>
 
-            <label>
-                Base style
-                <select
-                    aria-label="Base style"
-                    value={state.doc.baseStyle}
-                    onChange={(e) => dispatch({ type: 'setBaseStyle', value: e.target.value as never })}
-                >
-                    {BASE_STYLES.map((s) => (
-                        <option key={s} value={s}>
-                            {s}
-                        </option>
-                    ))}
-                </select>
-            </label>
+            <ToolbarControls />
 
             <label>
                 Layout
@@ -82,23 +85,7 @@ export function Toolbar(): React.JSX.Element {
 
             <div className="spacer" />
 
-            {state.impactProgress && (
-                <span className="progress">
-                    analysing {state.impactProgress.done}/{state.impactProgress.total}
-                </span>
-            )}
-            {impactSummary && !state.impactProgress && (
-                <span className={`progress ${state.impactStale ? 'stale' : ''}`}>
-                    {impactSummary.live} of {impactSummary.live + impactSummary.inert} options affect this sample
-                    {state.impactStale && ' · out of date'}
-                </span>
-            )}
-            <button onClick={runImpact} disabled={state.status !== 'ready'}>
-                {state.impact ? 'Re-analyse' : 'Analyse my code'}
-            </button>
-            <button onClick={() => dispatch({ type: 'resetAll' })} disabled={state.doc.overrides.size === 0}>
-                Reset {state.doc.overrides.size > 0 ? `(${state.doc.overrides.size})` : ''}
-            </button>
+            <ToolbarStatus />
         </header>
     );
 }

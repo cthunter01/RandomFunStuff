@@ -30,12 +30,13 @@ const RULES: LayerRule[] = [
             /^react(-dom)?(\/|$)/,
             /^@codemirror\//,
             /^@wasm-fmt\//,
+            /^@bjorn3\//,
             /(^|\/)ui\//,
             /\.\.\/ui\//,
             /(^|\/)worker\/(?!protocol)/,
             /(^|\/)app\//,
         ],
-        why: 'core is the framework-free engine: no React, no CodeMirror, no wasm, no UI. It reaches the formatter only through FormatterPort.',
+        why: 'core is the framework-free engine: no React, no CodeMirror, no wasm, no UI. It reaches the tools only through FormatterPort and TidyPort.',
     },
     {
         layer: 'worker',
@@ -44,8 +45,8 @@ const RULES: LayerRule[] = [
     },
     {
         layer: 'ui',
-        forbidden: [/^@wasm-fmt\//, /(^|\/)worker\/(?!protocol|client)/],
-        why: 'importing @wasm-fmt on the main thread installs a second 2.5 MB module in that realm; the UI must go through the worker client.',
+        forbidden: [/^@wasm-fmt\//, /^@bjorn3\//, /(^|\/)worker\/(?!(tidy\/)?(protocol|client)\.ts$)/],
+        why: 'the wasm (clang-format, and clang-tidy with its WASI shim) lives in workers; the UI must go through the worker clients.',
     },
 ];
 

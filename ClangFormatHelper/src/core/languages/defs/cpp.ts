@@ -687,6 +687,170 @@ constexpr bool is_sorted_by(const Range &range, Compare compare = {}) {
 `,
 };
 
+/**
+ * Written for clang-tidy rather than clang-format: small, but built to trip checks
+ * across most modules — a use after move, a dangling string_view, a divide by
+ * zero the analyzer can prove, needless copies, and a pile of missed
+ * modernisations. The clang-format samples, being about layout, leave most of
+ * clang-tidy with nothing to say. `tests/core/tidy/samples.test.ts` pins the spread.
+ *
+ * Checked with `clang++ -std=c++23 -fsyntax-only`, against both libstdc++ and the
+ * app's musl/libc++ sysroot. Its one compiler warning (a dangling view) is on purpose.
+ */
+const tidyFindings: CodeSample = {
+    id: 'tidy-findings',
+    title: 'clang-tidy findings',
+    exercises: [
+        'use after move', 'dangling string_view', 'division by zero', 'C-style casts', 'raw loops',
+        'missing override', 'pass-by-value copies', 'implicit bool conversions', 'magic numbers', 'typedefs',
+        'deprecated C headers', 'unparenthesised macros', 'else after return',
+    ],
+    code: String.raw`// An inventory service with a little of everything clang-tidy looks for:
+// bugs, missed modernisations, needless copies, and readability snags.
+#include <stdio.h>
+#include <string.h>
+
+#include <map>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#define SQUARE(x) x * x
+#define MAX_ITEMS 128
+
+typedef std::map<std::string, int> StockTable;
+
+namespace inventory {
+
+struct Item {
+    std::string name;
+    int quantity;
+    double price;
+
+    Item() : name(""), quantity(0), price(0.0) {}
+    Item(std::string n, int q, double p) : name(n), quantity(q), price(p) {}
+};
+
+class Store {
+public:
+    Store(int capacity) : capacity_(capacity) {}
+    virtual ~Store() {}
+
+    virtual int size() const { return static_cast<int>(items_.size()); }
+    void add(Item item) { items_.push_back(item); }
+
+    bool empty() const {
+        if (items_.size() == 0)
+            return true;
+        else
+            return false;
+    }
+
+    const std::vector<Item> &items() const { return items_; }
+    int capacity() { return capacity_; }
+
+private:
+    std::vector<Item> items_;
+    int capacity_;
+};
+
+class Warehouse : public Store {
+public:
+    Warehouse() : Store(MAX_ITEMS) {}
+    virtual int size() const { return Store::size() * 2; }
+};
+
+double total_value(std::vector<Item> items) {
+    double total = 0;
+    for (std::vector<Item>::iterator it = items.begin(); it != items.end(); ++it) {
+        total += it->price * it->quantity;
+    }
+    return total;
+}
+
+int average_quantity(const std::vector<Item> &items) {
+    int sum = 0;
+    for (const auto item : items) sum += item.quantity;
+    return sum / items.size();
+}
+
+std::string describe(const Item &item) {
+    std::string text = std::string("Item ") + item.name + ": " + std::to_string(item.quantity);
+    const char *raw = text.c_str();
+    return std::string(raw);
+}
+
+std::string_view label_of(const Item &item) {
+    std::string_view view = item.name + "!";
+    return view;
+}
+
+bool is_named(const Item &item, const char *name) {
+    if (strcmp(item.name.c_str(), name))
+        return false;
+    return true;
+}
+
+StockTable build_table(const std::vector<Item> &items) {
+    StockTable table;
+    for (int i = 0; i < items.size(); ++i) {
+        table[items[i].name] = items[i].quantity;
+    }
+    return table;
+}
+
+std::vector<std::string> names(const std::vector<Item> &items) {
+    std::vector<std::string> out;
+    for (const Item &item : items) out.push_back(std::string(item.name));
+    return out;
+}
+
+std::unique_ptr<Store> make_store(int capacity) {
+    return std::unique_ptr<Store>(new Store(capacity));
+}
+
+int transfer(Store &from, Store &to, int count) {
+    Item moved("widget", count, 2.5);
+    to.add(std::move(moved));
+    printf("moved %s\n", moved.name.c_str());
+    int scaled = SQUARE(count + 1);
+    return (int)scaled;
+}
+
+int *find_slot(int *slots, int n, int wanted) {
+    int *found = 0;
+    for (int i = 0; i < n; ++i)
+        if (slots[i] == wanted) found = &slots[i];
+    return found;
+}
+
+int restock(int *slots) {
+    int *slot = find_slot(slots, 8, 42);
+    int before = *slot;
+    int ratio = before / (before - before);
+    return ratio;
+}
+
+void report(Store &store) {
+    int unused = store.size();
+    char buffer[64];
+    snprintf(buffer, sizeof(buffer), "%d items", store.size());
+    puts(buffer);
+}
+
+}  // namespace inventory
+
+int main() {
+    inventory::Warehouse warehouse;
+    warehouse.add(inventory::Item("bolt", 10, 0.25));
+    inventory::report(warehouse);
+    return warehouse.empty() ? 1 : 0;
+}
+`,
+};
+
 export const cpp: LanguageDefinition = {
     id: 'cpp',
     label: 'C++',
@@ -700,8 +864,10 @@ export const cpp: LanguageDefinition = {
         callsAndBreaking,
         shortConstructs,
         includesAndMacros,
+        tidyFindings,
     ],
     defaultSampleId: kitchenSink.id,
+    tidy: { compileFlags: '-std=c++23' },
     signatureOptions: [
         'BasedOnStyle',
         'ColumnLimit',
@@ -727,6 +893,7 @@ export const c: LanguageDefinition = {
     extensions: ['.c', '.h'],
     samples: [cSample],
     defaultSampleId: cSample.id,
+    tidy: { compileFlags: '-std=c17' },
     signatureOptions: [
         'BasedOnStyle',
         'ColumnLimit',

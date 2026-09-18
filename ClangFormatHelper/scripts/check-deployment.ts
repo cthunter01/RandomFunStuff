@@ -102,8 +102,22 @@ async function main(): Promise<void> {
     const entryJs = /src="\.\/(assets\/[^"]+\.js)"/.exec(indexHtml)?.[1];
     const entryCss = /href="\.\/(assets\/[^"]+\.css)"/.exec(indexHtml)?.[1];
     const assets = await readdir(path.join(DIST, 'assets'));
-    const wasm = assets.find((f) => f.endsWith('.wasm'));
-    if (!entryJs || !entryCss || !wasm) throw new Error('Could not find the entry script, stylesheet and wasm in dist/.');
+    // The large binaries: the clang-format module, the clang-tidy module, and the
+    // header tarball clang-tidy analyses against. Each is checked the same way.
+    const binaries = assets
+        .filter((f) => /\.(wasm|tar)$/.test(f))
+        .map((file) => ({
+            file,
+            label: file.startsWith('clang-tidy-sysroot')
+                ? 'clang-tidy headers'
+                : file.startsWith('clang-tidy')
+                  ? 'clang-tidy module'
+                  : 'clang-format module',
+            mime: file.endsWith('.wasm') ? /^application\/wasm$/ : /^application\/(x-tar|octet-stream)$/,
+        }));
+    if (!entryJs || !entryCss || !binaries.some((b) => b.file.endsWith('.wasm'))) {
+        throw new Error('Could not find the entry script, stylesheet and wasm in dist/.');
+    }
 
     process.stdout.write(`checking ${base.href} against ${path.relative(process.cwd(), DIST)}/\n\n`);
 
@@ -132,7 +146,7 @@ async function main(): Promise<void> {
     for (const [label, file, mime] of [
         ['script', entryJs, /^(text|application)\/javascript/],
         ['stylesheet', entryCss, /^text\/css/],
-        ['wasm module', `assets/${wasm}`, /^application\/wasm$/],
+        ...binaries.map((b) => [b.label, `assets/${b.file}`, b.mime] as const),
     ] as const) {
         const res = await get(new URL(file, base), { 'Accept-Encoding': 'identity' });
         check(res.status === 200, `${label}: 200`, `${label}: HTTP ${res.status} for ${file}`);
@@ -140,8 +154,8 @@ async function main(): Promise<void> {
         check(
             mime.test(type),
             `${label}: served as ${type}`,
-            label === 'wasm module'
-                ? `wasm module: Content-Type is "${type}" — must be exactly application/wasm or streaming compilation fails (the app falls back, slower, with a console warning)`
+            label.endsWith('module')
+                ? `${label}: Content-Type is "${type}" — must be exactly application/wasm or streaming compilation fails (the app falls back, slower, with a console warning)`
                 : `${label}: Content-Type is "${type}"`,
         );
         const cache = header(res, 'cache-control');
@@ -155,50 +169,53 @@ async function main(): Promise<void> {
     }
 
     // ---- compression, verified byte-for-byte ----
-    const localWasm = await readFile(path.join(DIST, 'assets', wasm));
-    const wasmUrl = new URL(`assets/${wasm}`, base);
-    for (const encoding of ['br', 'gzip', 'identity'] as const) {
-        const res = await get(wasmUrl, { 'Accept-Encoding': encoding });
-        const served = header(res, 'content-encoding').toLowerCase() || 'identity';
-        let decoded: Buffer;
-        try {
-            decoded = decode(res);
-        } catch {
-            record('FAIL', `wasm with Accept-Encoding ${encoding}: body does not decode as "${served}"`);
-            continue;
-        }
-        if (!decoded.equals(localWasm)) {
-            // The usual cause: a precompressed file compressed again on the fly.
-            record(
-                'FAIL',
-                `wasm with Accept-Encoding ${encoding}: decodes to ${kb(decoded.length)}, expected ${kb(localWasm.length)} — likely compressed twice`,
+    for (const binary of binaries) {
+        const local = await readFile(path.join(DIST, 'assets', binary.file));
+        const url = new URL(`assets/${binary.file}`, base);
+        const name = binary.label;
+        for (const encoding of ['br', 'gzip', 'identity'] as const) {
+            const res = await get(url, { 'Accept-Encoding': encoding });
+            const served = header(res, 'content-encoding').toLowerCase() || 'identity';
+            let decoded: Buffer;
+            try {
+                decoded = decode(res);
+            } catch {
+                record('FAIL', `${name} with Accept-Encoding ${encoding}: body does not decode as "${served}"`);
+                continue;
+            }
+            if (!decoded.equals(local)) {
+                // The usual cause: a precompressed file compressed again on the fly.
+                record(
+                    'FAIL',
+                    `${name} with Accept-Encoding ${encoding}: decodes to ${kb(decoded.length)}, expected ${kb(local.length)} — likely compressed twice`,
+                );
+                continue;
+            }
+            if (encoding === 'identity') {
+                check(served === 'identity', `${name} uncompressed when the client asks for none`, `served "${served}" to a client that asked for identity`);
+                continue;
+            }
+            if (served === 'identity') {
+                record('WARN', `${name} with Accept-Encoding ${encoding}: sent uncompressed (${kb(res.body.length)})`);
+                continue;
+            }
+            record('PASS', `${name} with Accept-Encoding ${encoding}: ${served}, ${kb(res.body.length)}, byte-identical once decoded`);
+            // Caching has to be checked on the compressed response specifically: that is
+            // what every real browser receives, and on Apache the precompressed variant
+            // is answered by a rewritten request that can miss the caching rule entirely.
+            const cache = header(res, 'cache-control');
+            check(
+                /max-age=\d{7,}/.test(cache) && /immutable/.test(cache),
+                `${name} with Accept-Encoding ${encoding}: still cached long-term`,
+                `${name} with Accept-Encoding ${encoding}: Cache-Control is "${cache || '(none)'}" — only uncompressed responses are cached, so real browsers re-download it on every visit`,
+                'WARN',
             );
-            continue;
+            check(
+                /accept-encoding/i.test(header(res, 'vary')),
+                `${name} with Accept-Encoding ${encoding}: Vary: Accept-Encoding set`,
+                `${name} with Accept-Encoding ${encoding}: no Vary: Accept-Encoding — a shared cache could hand compressed bytes to a client that cannot decode them`,
+            );
         }
-        if (encoding === 'identity') {
-            check(served === 'identity', 'wasm uncompressed when the client asks for none', `served "${served}" to a client that asked for identity`);
-            continue;
-        }
-        if (served === 'identity') {
-            record('WARN', `wasm with Accept-Encoding ${encoding}: sent uncompressed (${kb(res.body.length)})`);
-            continue;
-        }
-        record('PASS', `wasm with Accept-Encoding ${encoding}: ${served}, ${kb(res.body.length)}, byte-identical once decoded`);
-        // Caching has to be checked on the compressed response specifically: that is
-        // what every real browser receives, and on Apache the precompressed variant
-        // is answered by a rewritten request that can miss the caching rule entirely.
-        const cache = header(res, 'cache-control');
-        check(
-            /max-age=\d{7,}/.test(cache) && /immutable/.test(cache),
-            `wasm with Accept-Encoding ${encoding}: still cached long-term`,
-            `wasm with Accept-Encoding ${encoding}: Cache-Control is "${cache || '(none)'}" — only uncompressed responses are cached, so real browsers re-download the module on every visit`,
-            'WARN',
-        );
-        check(
-            /accept-encoding/i.test(header(res, 'vary')),
-            `wasm with Accept-Encoding ${encoding}: Vary: Accept-Encoding set`,
-            `wasm with Accept-Encoding ${encoding}: no Vary: Accept-Encoding — a shared cache could hand compressed bytes to a client that cannot decode them`,
-        );
     }
 
     // ---- things that should not be there ----

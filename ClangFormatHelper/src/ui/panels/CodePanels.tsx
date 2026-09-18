@@ -21,26 +21,39 @@ function grammarForExample(language: string): string {
     return 'plain';
 }
 
+/**
+ * Chooses a library sample. The sample is shared by both tools, so this is too;
+ * picking one replaces the code in whichever tool is showing.
+ */
+export function SamplePicker(): React.JSX.Element {
+    const { state, dispatch, sample } = useStore();
+    const language = getLanguage(state.doc.languageId);
+    return (
+        <select
+            aria-label="Sample"
+            value={sample === '' ? '' : (language.samples.find((s) => s.code === sample)?.id ?? 'custom')}
+            onChange={(e) => {
+                const chosen = language.samples.find((s) => s.id === e.target.value);
+                if (chosen) dispatch({ type: 'setSample', languageId: language.id, code: chosen.code });
+            }}
+        >
+            {language.samples.map((s) => (
+                <option key={s.id} value={s.id}>
+                    {s.title}
+                </option>
+            ))}
+            <option value="custom">Custom…</option>
+        </select>
+    );
+}
+
 export function SamplePanel(): React.JSX.Element {
     const { state, dispatch, sample } = useStore();
     const language = getLanguage(state.doc.languageId);
     return (
         <div className="panel code-panel">
             <div className="panel-toolbar">
-                <select
-                    value={sample === '' ? '' : (language.samples.find((s) => s.code === sample)?.id ?? 'custom')}
-                    onChange={(e) => {
-                        const chosen = language.samples.find((s) => s.id === e.target.value);
-                        if (chosen) dispatch({ type: 'setSample', languageId: language.id, code: chosen.code });
-                    }}
-                >
-                    {language.samples.map((s) => (
-                        <option key={s.id} value={s.id}>
-                            {s.title}
-                        </option>
-                    ))}
-                    <option value="custom">Custom…</option>
-                </select>
+                <SamplePicker />
                 <span className="hint">Paste your own code — nothing leaves your browser.</span>
             </div>
             <CodeEditor
@@ -64,29 +77,36 @@ export function FormattedPanel(): React.JSX.Element {
     );
 }
 
-export function DiffPanel(): React.JSX.Element {
-    const { state } = useStore();
-    const rows = useMemo(
-        () => diffLines(state.baseFormatted, state.formatted),
-        [state.baseFormatted, state.formatted],
-    );
+/**
+ * A side-by-side line diff with both sides highlighted. Shared by both tools:
+ * the format side compares against the base style, the tidy side against the
+ * code with its fixes applied.
+ */
+export function DiffView({
+    before,
+    after,
+    language,
+    title,
+    hint,
+}: {
+    before: string;
+    after: string;
+    language: string;
+    title: string;
+    hint: (changed: number) => string;
+}): React.JSX.Element {
+    const rows = useMemo(() => diffLines(before, after), [before, after]);
     // Each side is parsed once as a whole document rather than line by line, so
     // constructs that span lines (block comments, raw strings) stay correct.
-    const grammar = useGrammar(state.doc.languageId);
-    const beforeLines = useMemo(
-        () => highlightLines(state.baseFormatted, state.doc.languageId),
-        [state.baseFormatted, state.doc.languageId, grammar],
-    );
-    const afterLines = useMemo(
-        () => highlightLines(state.formatted, state.doc.languageId),
-        [state.formatted, state.doc.languageId, grammar],
-    );
+    const grammar = useGrammar(language);
+    const beforeLines = useMemo(() => highlightLines(before, language), [before, language, grammar]);
+    const afterLines = useMemo(() => highlightLines(after, language), [after, language, grammar]);
     const changed = rows.filter((r) => r.kind !== 'same').length;
     return (
         <div className="panel code-panel">
             <div className="panel-toolbar">
-                <strong>{state.doc.baseStyle} baseline</strong>
-                <span className="hint">vs. your config — {changed} line(s) differ</span>
+                <strong>{title}</strong>
+                <span className="hint">{hint(changed)}</span>
             </div>
             <div className="diff">
                 {rows.map((row, i) => (
@@ -103,6 +123,19 @@ export function DiffPanel(): React.JSX.Element {
                 ))}
             </div>
         </div>
+    );
+}
+
+export function DiffPanel(): React.JSX.Element {
+    const { state } = useStore();
+    return (
+        <DiffView
+            before={state.baseFormatted}
+            after={state.formatted}
+            language={state.doc.languageId}
+            title={`${state.doc.baseStyle} baseline`}
+            hint={(changed) => `vs. your config — ${changed} line(s) differ`}
+        />
     );
 }
 
@@ -131,16 +164,31 @@ export function DocExamplePanel(): React.JSX.Element {
     );
 }
 
-export function YamlPanel(): React.JSX.Element {
-    const { state, fileText, importFile } = useStore();
+/**
+ * The generated config file, with copy, download and import. Shared by both
+ * tools; only the file name and the text differ.
+ */
+export function ConfigFilePanel({
+    fileName,
+    text,
+    notice,
+    onImport,
+    accept,
+}: {
+    fileName: string;
+    text: string;
+    notice: string | null;
+    onImport: (text: string) => void | Promise<void>;
+    accept: string;
+}): React.JSX.Element {
     const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
     return (
         <div className="panel code-panel">
             <div className="panel-toolbar">
-                <strong>.clang-format</strong>
+                <strong>{fileName}</strong>
                 <button
                     onClick={async () => {
-                        setCopyState((await copyText(fileText)) ? 'copied' : 'failed');
+                        setCopyState((await copyText(text)) ? 'copied' : 'failed');
                         setTimeout(() => setCopyState('idle'), 1500);
                     }}
                     title={copyState === 'failed' ? 'Your browser blocked the copy — select the text instead' : undefined}
@@ -149,10 +197,10 @@ export function YamlPanel(): React.JSX.Element {
                 </button>
                 <button
                     onClick={() => {
-                        const blob = new Blob([fileText], { type: 'text/yaml' });
+                        const blob = new Blob([text], { type: 'text/yaml' });
                         const a = document.createElement('a');
                         a.href = URL.createObjectURL(blob);
-                        a.download = '.clang-format';
+                        a.download = fileName;
                         a.click();
                         URL.revokeObjectURL(a.href);
                     }}
@@ -163,17 +211,30 @@ export function YamlPanel(): React.JSX.Element {
                     Import
                     <input
                         type="file"
-                        accept=".clang-format,.yaml,.yml,text/*"
+                        accept={accept}
                         onChange={async (e) => {
                             const file = e.target.files?.[0];
-                            if (file) await importFile(await file.text());
+                            if (file) await onImport(await file.text());
                             e.target.value = '';
                         }}
                     />
                 </label>
             </div>
-            {state.importNotice && <p className="notice">{state.importNotice}</p>}
-            <Code code={fileText} language="yaml" className="output yaml" />
+            {notice && <p className="notice">{notice}</p>}
+            <Code code={text} language="yaml" className="output yaml" />
         </div>
+    );
+}
+
+export function YamlPanel(): React.JSX.Element {
+    const { state, fileText, importFile } = useStore();
+    return (
+        <ConfigFilePanel
+            fileName=".clang-format"
+            text={fileText}
+            notice={state.importNotice}
+            onImport={importFile}
+            accept=".clang-format,.yaml,.yml,text/*"
+        />
     );
 }

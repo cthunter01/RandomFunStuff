@@ -28,6 +28,19 @@ const KNOWN_PATHS = new Set<string>(
 
 export type LayoutId = 'workbench' | 'diff-focus' | 'card-feed';
 
+/** Which tool's configuration is being built. See `ui/tools/registry.tsx`. */
+export type ToolId = 'format' | 'tidy';
+
+const TOOL_KEY = 'cfh.tool';
+
+function storedTool(): ToolId {
+    try {
+        return localStorage.getItem(TOOL_KEY) === 'tidy' ? 'tidy' : 'format';
+    } catch {
+        return 'format';
+    }
+}
+
 /** `system` follows the OS; the other two override it. */
 export type ThemeChoice = 'system' | 'light' | 'dark';
 
@@ -60,6 +73,7 @@ function applyTheme(choice: ThemeChoice): void {
 }
 
 export interface AppState {
+    toolId: ToolId;
     doc: StyleDocument;
     samples: Record<string, string>;
     layoutId: LayoutId;
@@ -98,6 +112,7 @@ type Action =
     | { type: 'replaceDoc'; doc: StyleDocument; notice: string | null }
     | { type: 'resetAll' }
     | { type: 'setSample'; languageId: string; code: string }
+    | { type: 'setTool'; value: ToolId }
     | { type: 'setLayout'; value: LayoutId }
     | { type: 'setTheme'; value: ThemeChoice }
     | { type: 'setSortMode'; value: SortMode }
@@ -118,6 +133,7 @@ function initialState(): AppState {
         samples[language.id] = sample?.code ?? '';
     }
     return {
+        toolId: storedTool(),
         doc: createDocument(DEFAULT_LANGUAGE_ID, 'LLVM'),
         samples,
         layoutId: (localStorage.getItem('cfh.layout') as LayoutId | null) ?? 'workbench',
@@ -156,6 +172,13 @@ function reducer(state: AppState, action: Action): AppState {
             return { ...state, doc: createDocument(state.doc.languageId, state.doc.baseStyle), impactStale: true };
         case 'setSample':
             return { ...state, samples: { ...state.samples, [action.languageId]: action.code }, impactStale: true };
+        case 'setTool':
+            try {
+                localStorage.setItem(TOOL_KEY, action.value);
+            } catch {
+                /* private mode: the choice just will not persist */
+            }
+            return { ...state, toolId: action.value };
         case 'setLayout':
             localStorage.setItem('cfh.layout', action.value);
             return { ...state, layoutId: action.value };

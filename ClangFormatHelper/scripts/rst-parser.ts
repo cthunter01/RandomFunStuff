@@ -59,7 +59,7 @@ function groupFor(name: string): string {
 }
 
 /** Strip the common leading whitespace from a block so examples render sanely. */
-function dedent(lines: string[]): string {
+export function dedent(lines: string[]): string {
     const meaningful = lines.filter((l) => l.trim().length > 0);
     if (meaningful.length === 0) return '';
     const indent = Math.min(...meaningful.map((l) => l.length - l.trimStart().length));
@@ -71,7 +71,7 @@ function dedent(lines: string[]): string {
  * the remaining prose. A directive owns all following lines that are blank or
  * indented further than the directive itself.
  */
-function extractCodeBlocks(lines: string[]): { examples: CodeExample[]; prose: string[] } {
+export function extractCodeBlocks(lines: string[]): { examples: CodeExample[]; prose: string[] } {
     const examples: CodeExample[] = [];
     const prose: string[] = [];
     for (let i = 0; i < lines.length; i++) {

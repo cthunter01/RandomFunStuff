@@ -4,25 +4,40 @@
 
 Everything else follows from these.
 
-1. **`src/core/` is framework-free.** No React, no CodeMirror, no DOM, and — importantly — no
-   `@wasm-fmt/clang-format`. The engine reaches the formatter only through the `FormatterPort` interface.
-2. **Variation lives in registries, not in conditionals.** There are two: languages and layouts.
+1. **`src/core/` is framework-free.** No React, no CodeMirror, no DOM, and — importantly — no wasm. The engine
+   reaches clang-format only through `FormatterPort` and clang-tidy only through `TidyPort`.
+2. **Variation lives in registries, not in conditionals.** There are three: languages, layouts, and tools.
 
 Both are enforced by `tests/architecture/layering.test.ts` rather than by this document, because a document
 nobody re-reads is not an architecture. Same idea as the layering check in the sibling `wxWidgets_Life` project.
 
 | Layer        | May import                                                | Never                                         |
 | ------------ | --------------------------------------------------------- | --------------------------------------------- |
-| `src/core`   | `src/core/**`, `src/worker/protocol`                      | react, codemirror, `@wasm-fmt/*`, `src/ui`    |
-| `src/worker` | `src/core/**`, `@wasm-fmt/*`                              | react, `src/ui`                               |
-| `src/ui`     | `src/core/**`, `src/ui/**`, `src/worker/{protocol,client}`| `@wasm-fmt/*`, the worker internals           |
+| `src/core`   | `src/core/**`, `src/worker/protocol`                      | react, codemirror, `@wasm-fmt/*`, `@bjorn3/*`, `src/ui` |
+| `src/worker` | `src/core/**`, `@wasm-fmt/*`, `@bjorn3/*`                 | react, `src/ui`                               |
+| `src/ui`     | `src/core/**`, `src/ui/**`, `src/worker/{,tidy/}{protocol,client}` | `@wasm-fmt/*`, `@bjorn3/*`, the worker internals |
 
-The "UI must not import `@wasm-fmt`" rule is not cosmetic: doing so installs a second 2.5 MB module in the main
-thread's realm and costs a second compile.
+The "UI must not import the wasm" rule is not cosmetic: doing so installs a second module in the main thread's
+realm — 2.5 MB for clang-format, 43 MB for clang-tidy — and costs a second compile. (`@bjorn3/browser_wasi_shim`
+is the WASI implementation clang-tidy runs on; it is only ever needed next to the module.)
 
 `FormatterPort` is what makes the engine testable. The app injects a Worker-backed implementation; the tests
 inject one that drives the same `createRuntime` directly in Node. So the impact engine's tests run against the
-real binary with no browser, no bundler and no mocks.
+real binary with no browser, no bundler and no mocks. `TidyPort` is the same arrangement for clang-tidy, with a
+worker pool behind it in the app and `createTidyRuntime` driven directly in the tests.
+
+## The tool registry
+
+The third registry. A *tool* is a config file the app helps build — `.clang-format` or `.clang-tidy` — and each
+supplies components for a fixed set of slots (`ToolPanels` in `src/ui/tools/registry.tsx`): the settings rail, the
+card feed, the sample, the result, the diff, the documentation, the file, its toolbar controls, its analysis
+status, and a gate shown until it is ready. Layouts arrange slots and never ask which tool fills them, so all three
+layouts serve both tools with no tool-specific code in any of them.
+
+State splits along the same line. The shared store keeps what both tools look at — which tool, the language, the
+sample, the layout, the theme — so switching tools keeps your code. Each tool's own state lives in its own store
+(`store.tsx` for clang-format, `tidyStore.tsx` for clang-tidy), and the Tidy store costs nothing until Tidy is
+first opened: its 1.2 MB catalog is a dynamic import and its workers start on first activation.
 
 ## Data flow
 
@@ -53,6 +68,77 @@ like, and because "has the user changed this?" needs to be O(1) for every row on
 - Lists are stored **whole** (`IncludeCategories`), since clang-format replaces lists rather than merging them.
 - Effective values always come from `dump_config`, never from our own idea of the defaults. That is what makes
   a `derived` value visible instead of mysterious.
+
+## The clang-tidy engine
+
+### Running clang-tidy in a browser
+
+There is no WebAssembly clang-tidy to download, so `tools/clang-tidy-wasm/` builds one: clang-tidy 23.1.1 with every
+module and the static analyzer, cross-compiled for WASI with wasi-sdk (the recipe and its trade-offs are in that
+directory's README). It runs on `@bjorn3/browser_wasi_shim`, a small JavaScript WASI implementation with an
+in-memory filesystem, which means the browser Worker and the Node tests run the same runtime.
+
+- **One instance per run.** clang-tidy is a WASI *command*: `main`, then exit. It cannot be re-entered, because
+  LLVM's command-line options are process-wide globals that refuse to be parsed twice. So every run instantiates the
+  already-compiled module afresh — milliseconds, against a run of hundreds — and nothing can leak between runs.
+- **Headers are a tarball, not a bundle.** The analyser needs the C and C++ standard headers: musl, libc++, and
+  clang's own. They ship as a 22.8 MB plain tar (1.7 MB brotli) that the worker unpacks into the in-memory
+  filesystem once, as views into the downloaded buffer rather than copies.
+- **Code is analysed as x86_64 Linux,** not as the WebAssembly it runs on — see the build README for why.
+- **Diagnostics come from `--export-fixes`,** not the text output. The YAML is structured by construction — check
+  name, level, position and fix-it replacements for every diagnostic, fix or no fix — so nothing is scraped from
+  messages. Its offsets are UTF-8 bytes; `core/tidy/diagnostics.ts` converts them to JavaScript string indices, and
+  a test proves applying the result gives byte-for-byte what clang-tidy's own `--fix` writes, on text full of
+  multi-byte characters.
+- **Missing headers are stood in for.** See `core/tidy/includes.ts`: a header the sysroot cannot supply becomes an
+  empty file searched last (`-idirafter`), so a real header of the same name always wins, and the UI names the ones
+  it had to invent.
+
+### What the analysis asks, and how it keeps the run count down
+
+The format side measures impact by brute force, one format per candidate value, because a format costs half a
+millisecond. A clang-tidy run costs about a second on a real C++ file — it parses the whole translation unit,
+standard headers included — so the Tidy analysis is built around making each run answer many questions:
+
+- **The survey** runs every check at once and reads each check's findings and fixes out of the one result. One
+  run answers "what would each of 602 checks do to this code".
+- **The option sweep** relies on a check's options affecting only that check. Run *k* gives every check its *k*-th
+  candidate value at once, and each check is compared with its own findings from the survey. The run count is the
+  largest number of candidates any one check has — capped at 12 — rather than the ~300 candidates in total.
+- **Runs are spread over a pool of up to four workers,** with interactive work (the live run after an edit, config
+  queries) always ahead of queued analysis runs. An edit waits for at most one run in flight, never for a sweep.
+
+Two clang-tidy behaviours would quietly distort "run everything at once", and the engine works around both:
+
+- **An alias and its target are deduplicated by name.** When both report the same thing clang-tidy keeps the one
+  whose name sorts first, so with everything on, `readability-magic-numbers` looks silent because
+  `cppcoreguidelines-avoid-magic-numbers` took its findings. The survey runs primary checks only and credits each
+  alias with its target's findings.
+- **Overlapping fixes from different checks are both dropped,** with a note saying so. With 540 checks on, that
+  happens a lot, and a check's fix preview would come out empty through no fault of its own. Checks that lost fixes
+  are re-run in a few small rounds, grouped so checks that fired on neighbouring lines are kept apart. The same
+  effect would also fool the sweep, whose rounds run a different set of checks from the survey's — a fix that was
+  dropped in one and not the other is not the option's doing — so fix comparison looks only at findings whose fixes
+  survived on both sides.
+
+Measured in Firefox on the 286-line kitchen sink: 2.9 s from switching to Tidy to the first findings (boot
+included), 7.2 s for the whole analysis — survey, fix recovery, and 12 sweep rounds.
+
+### The catalog
+
+`scripts/generate-tidy-catalog.ts` joins two sources with a strict division of labour. clang-tidy's documentation
+at the pinned tag says what each check and option is *for*: ~570 hand-written pages, parsed for summaries, prose,
+examples and aliases. The **binary** says what exists and how it behaves:
+
+- every check, from `--list-checks` — including 34 static-analyzer checkers the docs never list;
+- every option's default, from `--dump-config`;
+- every option's **type**, by setting every option of every check to a value nothing accepts, in one run, and
+  reading the complaints: "expected a bool", "expected an integer", a bare rejection for an enum, and silence for
+  free text. Candidate enum values, scraped generously from the docs, are then kept only if the binary accepts them
+  — again batched, one round per candidate index.
+
+`npm run tidy-catalog:check` runs in the build, offline, and fails if the check list, any dumped default, or the
+default `Checks` line has drifted from the vendored binary.
 
 ## Things that turned out to be false
 
@@ -89,6 +175,34 @@ missing this way. The validation gate now checks nested field paths, not just to
 
 **`BreakBeforeBraces` overwrites `BraceWrapping` in either key order.** Not an ordering problem, so no amount of
 careful serialization avoids it. Modelled as a first-class constraint with a one-click fix.
+
+And on the clang-tidy side:
+
+**"clang-tidy enables the static analyzer by default."** It used to. In 23.1.1 the default `Checks` is only
+`clang-diagnostic-*`, and a file's own `Checks` are *appended* to it — which is why the app reads the default from
+the binary into the catalog instead of writing it down.
+
+**"Every enabled check shows up in `--list-checks`."** Compiler diagnostics (`clang-diagnostic-*`) never do, and
+with nothing else enabled it prints `No checks enabled.` and exits non-zero rather than printing an empty list.
+
+**"A bool option comes back as `true` or `false`."** Several checks read a bool but store an integer, so
+`--dump-config` reports `1` for an option set to `true`. Values are compared the way clang-tidy parses them
+(`parseTidyBool`), or every such override would look rejected.
+
+**"A value clang-tidy cannot parse gets a warning."** Almost always. The generator's probe crashed the binary
+outright — natively as well as in WebAssembly — and bisection found the one option responsible:
+`bugprone-suspicious-missing-comma.RatioThreshold`, parsed with `std::stod`, which throws in a program built without
+exceptions. It is marked `fragile` in the catalog, the probe routes around it, and the UI only ever sends it a
+number.
+
+**"A missing `#include` is just an error."** It is a *fatal* error, and clang suppresses every compiler diagnostic
+after one. Hence the empty stand-ins.
+
+**"The WASI shim's debug logging is off unless you ask for it."** The reverse: an absent `debug` option means *on*,
+and it logs every failed header lookup — thousands of lines per run.
+
+**"`-O3` is worth it for a compute-heavy module."** 3–5% faster per run and 36% larger. The download is paid by
+every visitor; the speed difference is not noticeable. `MinSizeRel` it is.
 
 ## The catalog generator
 
@@ -232,6 +346,12 @@ via `String.raw` so no escaping can quietly corrupt them. C++ developers will re
 that does not compile would undermine the whole tool.
 
 ## Known limitations
+
+- clang-tidy analyses one file with the flags you give it. There is no compilation database, so project include
+  paths and macros are whatever you pass in *Flags*; headers it cannot find are stood in for.
+- The option sweep skips `readability-identifier-naming`'s ~270 per-kind settings (they do not fit its per-check
+  budget, and are chosen by intent rather than discovered) and does not probe free-text options at all.
+- `CustomChecks` (clang-query based, experimental) can be imported and exported but not edited.
 
 - `IncludeCategories` and `RawStringFormats` are edited as JSON rather than through a dedicated editor.
 - Nested struct fields are reachable from the option rail but not from a card in the card feed.

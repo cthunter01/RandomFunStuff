@@ -5,9 +5,10 @@
  *
  * The web server then serves those files as-is (nginx `gzip_static`, the rewrite
  * rules in deploy/apache) instead of compressing on every request. That matters
- * more than usual here because of the 2.5 MB wasm module: maximum-effort brotli
- * takes it to ~860 KB, against ~1.08 MB for gzip, but brotli at that effort takes
- * seconds per file — far too slow to do per request, trivial to do once at deploy.
+ * more than usual here because of the wasm modules: maximum-effort brotli takes
+ * clang-format's 2.5 MB to ~860 KB and clang-tidy's 43 MB to 7.4 MB, against
+ * ~1.08 MB and 11.6 MB for gzip. At that effort brotli takes seconds per megabyte
+ * — far too slow to do per request, and fine to do once at deploy.
  *
  * Uses Node's own zlib, so it needs no gzip or brotli binaries and works the same
  * on every platform.
@@ -21,8 +22,12 @@ import { brotliCompressSync, constants, gzipSync } from 'node:zlib';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIST = path.join(ROOT, process.argv[2] ?? 'dist');
 
-/** Worth compressing: text formats plus wasm. Images and fonts are already compressed. */
-const COMPRESSIBLE = /\.(?:html|js|mjs|css|wasm|json|map|svg|txt)$/i;
+/**
+ * Worth compressing: text formats, wasm, and the clang-tidy header tarball (an
+ * uncompressed tar of text, 22.8 MB that brotli takes to 1.7 MB). Images and
+ * fonts are already compressed.
+ */
+const COMPRESSIBLE = /\.(?:html|js|mjs|css|wasm|json|map|svg|txt|tar)$/i;
 /** Below this, the headers cost more than compression saves. */
 const MIN_BYTES = 1024;
 
