@@ -8,6 +8,17 @@ import { useStore } from '../state/store.tsx';
 import { getLanguage } from '../../core/languages/registry.ts';
 import { diffLines } from '../../core/diff/lineDiff.ts';
 import { catalog } from '../state/store.tsx';
+import { Code, CodeLine } from '../components/Code.tsx';
+import { CodeEditor } from '../components/CodeEditor.tsx';
+import { highlightLines } from '../highlight/highlight.ts';
+import { useGrammar } from '../highlight/useGrammar.ts';
+
+/** Maps a doc example's `.. code-block::` language onto a grammar we have. */
+function grammarForExample(language: string): string {
+    if (/^(c\+\+|cpp|c|objc)$/i.test(language)) return 'cpp';
+    if (/^ya?ml$/i.test(language)) return 'yaml';
+    return 'plain';
+}
 
 export function SamplePanel(): React.JSX.Element {
     const { state, dispatch, sample } = useStore();
@@ -31,11 +42,10 @@ export function SamplePanel(): React.JSX.Element {
                 </select>
                 <span className="hint">Paste your own code — nothing leaves your browser.</span>
             </div>
-            <textarea
-                className="editor"
-                spellCheck={false}
+            <CodeEditor
                 value={sample}
-                onChange={(e) => dispatch({ type: 'setSample', languageId: language.id, code: e.target.value })}
+                language={language.id}
+                onChange={(code) => dispatch({ type: 'setSample', languageId: language.id, code })}
             />
         </div>
     );
@@ -48,7 +58,7 @@ export function FormattedPanel(): React.JSX.Element {
             <div className="panel-toolbar">
                 <strong>Formatted</strong>
             </div>
-            <pre className="output">{state.formatted}</pre>
+            <Code code={state.formatted} language={state.doc.languageId} className="output" />
         </div>
     );
 }
@@ -58,6 +68,17 @@ export function DiffPanel(): React.JSX.Element {
     const rows = useMemo(
         () => diffLines(state.baseFormatted, state.formatted),
         [state.baseFormatted, state.formatted],
+    );
+    // Each side is parsed once as a whole document rather than line by line, so
+    // constructs that span lines (block comments, raw strings) stay correct.
+    const grammar = useGrammar(state.doc.languageId);
+    const beforeLines = useMemo(
+        () => highlightLines(state.baseFormatted, state.doc.languageId),
+        [state.baseFormatted, state.doc.languageId, grammar],
+    );
+    const afterLines = useMemo(
+        () => highlightLines(state.formatted, state.doc.languageId),
+        [state.formatted, state.doc.languageId, grammar],
     );
     const changed = rows.filter((r) => r.kind !== 'same').length;
     return (
@@ -70,9 +91,13 @@ export function DiffPanel(): React.JSX.Element {
                 {rows.map((row, i) => (
                     <div key={i} className={`diff-row ${row.kind}`}>
                         <span className="gutter">{row.beforeLine ?? ''}</span>
-                        <pre className="side before">{row.before ?? ''}</pre>
+                        <pre className="side before">
+                            {row.beforeLine === null ? '' : <CodeLine line={beforeLines[row.beforeLine - 1]} />}
+                        </pre>
                         <span className="gutter">{row.afterLine ?? ''}</span>
-                        <pre className="side after">{row.after ?? ''}</pre>
+                        <pre className="side after">
+                            {row.afterLine === null ? '' : <CodeLine line={afterLines[row.afterLine - 1]} />}
+                        </pre>
                     </div>
                 ))}
             </div>
@@ -97,9 +122,7 @@ export function DocExamplePanel(): React.JSX.Element {
             <div className="doc-body">
                 {option && <p className="doc">{option.doc}</p>}
                 {examples.slice(0, 6).map((ex, i) => (
-                    <pre key={i} className="output">
-                        {ex.code}
-                    </pre>
+                    <Code key={i} code={ex.code} language={grammarForExample(ex.language)} className="output" />
                 ))}
                 {option && examples.length === 0 && <p className="muted">This option ships no example.</p>}
             </div>
@@ -140,7 +163,7 @@ export function YamlPanel(): React.JSX.Element {
                 </label>
             </div>
             {state.importNotice && <p className="notice">{state.importNotice}</p>}
-            <pre className="output yaml">{fileText}</pre>
+            <Code code={fileText} language="yaml" className="output yaml" />
         </div>
     );
 }

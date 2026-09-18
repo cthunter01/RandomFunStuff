@@ -14,6 +14,7 @@ import type { ConfigValue } from '../../core/config/model.ts';
 import type { Provenance } from '../../core/config/effective.ts';
 import type { ImpactResult } from '../../core/analysis/impact.ts';
 import type { Verdict } from '../../core/config/constraints.ts';
+import { Code } from '../components/Code.tsx';
 
 export type Density = 'comfortable' | 'compact' | 'inline';
 
@@ -29,6 +30,9 @@ export interface ControlProps {
     impact?: ImpactResult;
     verdicts?: Verdict[];
     density: Density;
+    /** Grammar for the micro-preview. Passed rather than read from context so the
+     *  memoised control does not re-render on every unrelated store change. */
+    language: string;
     onChange: (path: string, value: ConfigValue) => void;
     onReset: (path: string) => void;
 }
@@ -167,8 +171,16 @@ export const OptionControl = memo(function OptionControl(props: ControlProps): R
             )}
             {density === 'inline' && impact?.witness?.hunk && (
                 <div className="micro-preview">
-                    <pre className="before">{impact.witness.hunk.before.join('\n')}</pre>
-                    <pre className="after">{impact.witness.hunk.after.join('\n')}</pre>
+                    <Code
+                        code={impact.witness.hunk.before.join('\n')}
+                        language={props.language}
+                        className="before"
+                    />
+                    <Code
+                        code={impact.witness.hunk.after.join('\n')}
+                        language={props.language}
+                        className="after"
+                    />
                 </div>
             )}
         </div>

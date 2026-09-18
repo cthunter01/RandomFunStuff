@@ -16,6 +16,17 @@
     --warn-soft: #fff4dc;
     --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
     --radius: 6px;
+
+    /* Syntax palette. Kept restrained: these sit on top of the red/green diff
+       backgrounds, so anything saturated turns the diff into soup. */
+    --tok-keyword: #cf222e;
+    --tok-string: #0a3069;
+    --tok-number: #0550ae;
+    --tok-comment: #6a737d;
+    --tok-type: #953800;
+    --tok-property: #6f42c1;
+    --tok-operator: #57606a;
+    --tok-meta: #cf222e;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,6 +45,15 @@
         --removed-line: #ef6f63;
         --warn: #e0b055;
         --warn-soft: #33290f;
+
+        --tok-keyword: #ff7b72;
+        --tok-string: #a5d6ff;
+        --tok-number: #79c0ff;
+        --tok-comment: #8b949e;
+        --tok-type: #ffa657;
+        --tok-property: #d2a8ff;
+        --tok-operator: #9aa1ad;
+        --tok-meta: #ff7b72;
     }
 }
 
@@ -139,12 +159,30 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 
 /* ---- code panels ---- */
 .code-panel { min-height: 0; }
-.editor, .output {
+.editor, .output, pre.code.output {
     flex: 1; margin: 0; padding: 10px; overflow: auto;
     font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
     background: var(--bg); color: var(--text); border: none; resize: none;
     white-space: pre; tab-size: 4;
 }
+
+/* The editable sample: a transparent textarea over a highlighted copy of the same
+   text. Both layers must agree on every metric or the caret drifts, so the shared
+   `.editor-layer` rule is the single place they are set. */
+.editor-wrap { position: relative; flex: 1; min-height: 0; background: var(--bg); }
+.editor-layer {
+    position: absolute; inset: 0; margin: 0; padding: 10px;
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    white-space: pre; tab-size: 4; border: none;
+}
+.editor-backdrop { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.editor-backdrop .code-line { min-height: calc(12.5px * 1.55); }
+textarea.editor {
+    overflow: auto; resize: none; background: transparent;
+    /* The text itself comes from the layer below; only the caret is drawn here. */
+    color: transparent; caret-color: var(--text);
+}
+textarea.editor::selection { background: var(--accent-soft); color: transparent; }
 .editor:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .doc-body { overflow: auto; padding: 10px; }
 .doc-body .output { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 10px; }
@@ -153,11 +191,28 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
     border: 1px solid var(--border); border-radius: var(--radius); padding: 4px 8px; font-size: 13px; }
 .import input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
+/* ---- syntax highlighting ---- */
+/* Highlighted code is plain markup, not an editor instance: the card feed shows a
+   preview per option, and 200+ editors would not survive. */
+.code { margin: 0; font-family: var(--mono); white-space: pre; tab-size: 4; }
+.code-line { min-height: 1.55em; }
+
+.tok-keyword, .tok-modifier, .tok-controlKeyword, .tok-operatorKeyword { color: var(--tok-keyword); }
+.tok-string, .tok-string2, .tok-character, .tok-regexp { color: var(--tok-string); }
+.tok-number, .tok-bool, .tok-atom, .tok-literal { color: var(--tok-number); }
+.tok-comment, .tok-lineComment, .tok-blockComment, .tok-docComment { color: var(--tok-comment); font-style: italic; }
+.tok-typeName, .tok-className, .tok-namespace, .tok-standard { color: var(--tok-type); }
+.tok-propertyName, .tok-attributeName, .tok-labelName { color: var(--tok-property); }
+.tok-operator, .tok-punctuation, .tok-separator, .tok-bracket, .tok-derefOperator { color: var(--tok-operator); }
+.tok-meta, .tok-processingInstruction, .tok-macroName { color: var(--tok-meta); }
+.tok-definition { font-weight: 600; }
+.tok-invalid { color: var(--removed-line); text-decoration: underline wavy; }
+
 /* ---- diff ---- */
 .diff { flex: 1; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 .diff-row { display: grid; grid-template-columns: 44px 1fr 44px 1fr; align-items: stretch; }
 .diff-row .gutter { color: var(--text-muted); text-align: right; padding: 0 6px; user-select: none; font-size: 11px; }
-.diff-row .side { margin: 0; padding: 0 8px; white-space: pre; overflow: hidden; }
+.diff-row .side { margin: 0; padding: 0 8px; white-space: pre; overflow: hidden; font-family: var(--mono); }
 .diff-row.removed .before, .diff-row.changed .before { background: var(--removed); }
 .diff-row.added .after, .diff-row.changed .after { background: var(--added); }
 .diff-row.removed .after, .diff-row.added .before { background: var(--bg-sunken); }
@@ -177,6 +232,7 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
     margin: 0; padding: 6px; border-radius: var(--radius); overflow: auto;
     font-family: var(--mono); font-size: 11px; line-height: 1.45; white-space: pre; max-height: 140px;
 }
+.micro-preview .code-line { min-height: 1.45em; }
 .micro-preview .before { background: var(--removed); }
 .micro-preview .after { background: var(--added); }
 

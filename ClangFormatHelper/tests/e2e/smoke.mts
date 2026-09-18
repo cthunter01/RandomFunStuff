@@ -64,6 +64,36 @@ try {
     if (!after.includes('PointerAlignment: Left')) fail(`YAML did not pick up the change:\n${after}`);
     console.log('OK  changing an option updates the generated .clang-format');
 
+    // Syntax highlighting: grammars load after first paint, so wait for real tokens.
+    await page.waitForSelector('.editor-backdrop [class^=tok-]', { timeout: 30_000 });
+    await page.waitForSelector('.output.yaml [class^=tok-]', { timeout: 30_000 });
+    console.log('OK  editor and .clang-format pane are highlighted');
+
+    // The editable sample is a transparent textarea over a highlighted copy of the
+    // same text. If the two layers disagree on metrics the caret drifts off the
+    // glyphs, which is invisible to every other assertion here.
+    const layers = await page.evaluate(() => {
+        const ta = document.querySelector('textarea.editor') as HTMLTextAreaElement;
+        const pre = document.querySelector('.editor-backdrop pre.code') as HTMLElement;
+        const taBox = ta.getBoundingClientRect();
+        const preBox = pre.getBoundingClientRect();
+        return {
+            heightDelta: Math.abs(ta.scrollHeight - pre.scrollHeight),
+            originDelta: Math.abs(taBox.left - preBox.left) + Math.abs(taBox.top - preBox.top),
+            lines: ta.value.split('\n').length,
+            lineDivs: pre.querySelectorAll('.code-line').length,
+        };
+    });
+    if (layers.heightDelta > 2 || layers.originDelta > 1 || layers.lines !== layers.lineDivs) {
+        fail(`editor layers are misaligned: ${JSON.stringify(layers)}`);
+    }
+    console.log(`OK  editor layers aligned (${layers.lines} lines, ${layers.heightDelta}px height delta)`);
+
+    await page.click('.tabs button:nth-child(3)'); // Diff vs base
+    await page.waitForSelector('.diff-row [class^=tok-]', { timeout: 30_000 });
+    console.log('OK  diff is highlighted on both sides');
+    await page.click('.tabs button:nth-child(1)');
+
     // Switch to each layout and confirm it mounts and keeps the override.
     for (const [value, selector] of [
         ['diff-focus', '.layout.diff-focus'],

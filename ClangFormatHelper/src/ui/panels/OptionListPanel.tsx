@@ -56,6 +56,7 @@ export function OptionListPanel({ density = 'compact' }: { density?: Density }):
                                         impact={state.impact?.get(row.path)}
                                         verdicts={state.verdicts.get(row.path)}
                                         density={density}
+                                        language={state.doc.languageId}
                                         onChange={set}
                                         onReset={reset}
                                     />
@@ -91,6 +92,7 @@ export function OptionListPanel({ density = 'compact' }: { density?: Density }):
                                                                     impact={state.impact?.get(path)}
                                                                     verdicts={state.verdicts.get(path)}
                                                                     density="compact"
+                                                                    language={state.doc.languageId}
                                                                     onChange={set}
                                                                     onReset={reset}
                                                                 />

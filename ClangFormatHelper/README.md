@@ -97,6 +97,10 @@ The layout switcher is in the toolbar. All three are views over one store, so sw
 Effective values are never guessed. Every value shown comes from round-tripping the config through the binary's
 own `dump_config`, so anything clang-format derives on its own is visible rather than mysterious.
 
+Code is highlighted everywhere — editor, output, both sides of the diff, doc examples and the card previews —
+using Lezer grammars to emit plain spans rather than an editor instance per view, because the card feed puts
+hundreds of code blocks on screen at once. Grammars load on demand so they stay out of the first paint.
+
 See [docs/architecture.md](docs/architecture.md) for the design, the extension points, and the list of things
 that turned out to be false during development.
 
@@ -108,6 +112,7 @@ that turned out to be false during development.
 | Core engine: config model, serializer, effective config, constraints       | done  |
 | UI: all 209 options, three switchable layouts, import/export               | done  |
 | Impact analysis: dim/rank/badge, per-option micro-previews                 | done  |
+| Syntax highlighting across every code view, including the editable sample  | done  |
 | Infer a config from already-formatted code                                 | not yet |
 | Inline YAML diagnostics, share links, offline PWA                          | not yet |
 

@@ -128,10 +128,34 @@ micro-previews are that witness, so they cost nothing extra.
 Cost, measured: ~250 ms for a small sample, ~4.5 s for a 528-line file, chunked at 64 styles per round trip and
 cancellable between chunks, entirely inside the worker.
 
+## Syntax highlighting
+
+Every code surface is highlighted — the sample editor, the formatted output, both sides of the diff, the
+documentation examples, and the per-option previews in the card feed.
+
+None of them is a CodeMirror editor. The card feed renders a before/after preview for *every* option, so the
+view count is in the hundreds and editor instances would not survive it. Instead `src/ui/highlight/` parses
+with the same Lezer grammars CodeMirror uses and emits plain spans carrying Lezer's standard `tok-*` classes,
+which cost about a millisecond for a 130-line document and render as ordinary markup.
+
+Two consequences worth knowing:
+
+- **Each document is parsed once as a whole**, not line by line, and the resulting spans are then split at line
+  boundaries. Parsing per line would break anything that spans lines — block comments, raw strings — and a
+  three-line comment would come out as three unrelated fragments. There is a test for exactly that, alongside
+  the invariant that matters most: highlighting must not lose or reorder a single character.
+- **Grammars load on demand.** Together they are ~125 KB gzipped, which would otherwise be most of the main
+  bundle. Highlighting is the one feature here that degrades gracefully, so code renders unstyled until its
+  grammar arrives and then repaints via `useGrammar`.
+
+The editable sample is a transparent `<textarea>` over a highlighted copy of the same text. Keeping a real
+textarea preserves native editing — selection, undo, IME, accessibility — and avoids pulling in an editor. The
+catch is that both layers must agree on every metric or the caret drifts from the glyphs, so font, size, line
+height, padding and tab size are set once in a shared `.editor-layer` rule, and the browser test asserts the
+two layers report identical content heights.
+
 ## Known limitations
 
-- The sample editor is a plain textarea. CodeMirror is in the dependency list for syntax highlighting and is
-  not wired up yet.
 - `IncludeCategories` and `RawStringFormats` are edited as JSON rather than through a dedicated editor.
 - Nested struct fields are reachable from the option rail but not from a card in the card feed.
 - There is no undo/redo yet; `Reset` clears all overrides.

@@ -57,6 +57,7 @@ export function OptionCardFeedPanel(): React.JSX.Element {
                                     impact={state.impact?.get(row.path)}
                                     verdicts={state.verdicts.get(row.path)}
                                     density="inline"
+                                    language={state.doc.languageId}
                                     onChange={set}
                                     onReset={reset}
                                 />
