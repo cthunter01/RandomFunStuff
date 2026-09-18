@@ -60,6 +60,13 @@ Press **Analyse my code** to run the impact sweep. Afterwards every option carri
 Impact is always **relative to your current config**, not a global claim. An option that does nothing now may
 well matter after you change something else.
 
+### Theme
+
+The **Theme** control offers *Match system*, *Light* and *Dark*. It defaults to matching your OS, and an
+explicit choice is remembered and wins over the system preference in both directions. Because the switch works
+by setting `color-scheme` rather than by swapping colour variables, native UI — dropdowns, checkboxes, the text
+caret, scrollbars — follows the theme too.
+
 ### Three layouts, same state
 
 The layout switcher is in the toolbar. All three are views over one store, so switching preserves everything.
@@ -113,6 +120,7 @@ that turned out to be false during development.
 | UI: all 209 options, three switchable layouts, import/export               | done  |
 | Impact analysis: dim/rank/badge, per-option micro-previews                 | done  |
 | Syntax highlighting across every code view, including the editable sample  | done  |
+| Selectable light / dark / match-system theme                               | done  |
 | Infer a config from already-formatted code                                 | not yet |
 | Inline YAML diagnostics, share links, offline PWA                          | not yet |
 

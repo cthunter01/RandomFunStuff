@@ -1,61 +1,49 @@
-/* Design tokens. Defined once so the three layouts cannot drift apart visually. */
+/* Design tokens.
+ *
+ * Every colour is written once as `light-dark(light, dark)`, which resolves
+ * against the root's `color-scheme`. That means the theme switch is a single
+ * property rather than a duplicated palette, and native UI — form controls,
+ * scrollbars, the caret — follows along for free, which it does not if you only
+ * swap custom properties.
+ */
 :root {
-    --bg: #ffffff;
-    --bg-sunken: #f4f5f7;
-    --bg-raised: #ffffff;
-    --border: #d8dbe0;
-    --text: #1c1f24;
-    --text-muted: #61666e;
-    --accent: #2f6fd0;
-    --accent-soft: #e8f0fc;
-    --added: #e6f6ea;
-    --added-line: #1a7f37;
-    --removed: #fdeceb;
-    --removed-line: #c0392b;
-    --warn: #8a5a00;
-    --warn-soft: #fff4dc;
+    /* Follow the OS unless the user has chosen otherwise. */
+    color-scheme: light dark;
+
+    --bg: light-dark(#ffffff, #16181d);
+    --bg-sunken: light-dark(#f4f5f7, #1c1f26);
+    --bg-raised: light-dark(#ffffff, #21252d);
+    --border: light-dark(#d8dbe0, #333945);
+    --text: light-dark(#1c1f24, #e6e8ec);
+    --text-muted: light-dark(#61666e, #9aa1ad);
+    --accent: light-dark(#2f6fd0, #6ea8fe);
+    --accent-soft: light-dark(#e8f0fc, #1e2a3d);
+    --added: light-dark(#e6f6ea, #16301f);
+    --added-line: light-dark(#1a7f37, #5cc97a);
+    --removed: light-dark(#fdeceb, #3a1d1d);
+    --removed-line: light-dark(#c0392b, #ef6f63);
+    --warn: light-dark(#8a5a00, #e0b055);
+    --warn-soft: light-dark(#fff4dc, #33290f);
+
     --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
     --radius: 6px;
 
     /* Syntax palette. Kept restrained: these sit on top of the red/green diff
        backgrounds, so anything saturated turns the diff into soup. */
-    --tok-keyword: #cf222e;
-    --tok-string: #0a3069;
-    --tok-number: #0550ae;
-    --tok-comment: #6a737d;
-    --tok-type: #953800;
-    --tok-property: #6f42c1;
-    --tok-operator: #57606a;
-    --tok-meta: #cf222e;
+    --tok-keyword: light-dark(#cf222e, #ff7b72);
+    --tok-string: light-dark(#0a3069, #a5d6ff);
+    --tok-number: light-dark(#0550ae, #79c0ff);
+    --tok-comment: light-dark(#6a737d, #8b949e);
+    --tok-type: light-dark(#953800, #ffa657);
+    --tok-property: light-dark(#6f42c1, #d2a8ff);
+    --tok-operator: light-dark(#57606a, #9aa1ad);
+    --tok-meta: light-dark(#cf222e, #ff7b72);
 }
 
-@media (prefers-color-scheme: dark) {
-    :root {
-        --bg: #16181d;
-        --bg-sunken: #1c1f26;
-        --bg-raised: #21252d;
-        --border: #333945;
-        --text: #e6e8ec;
-        --text-muted: #9aa1ad;
-        --accent: #6ea8fe;
-        --accent-soft: #1e2a3d;
-        --added: #16301f;
-        --added-line: #5cc97a;
-        --removed: #3a1d1d;
-        --removed-line: #ef6f63;
-        --warn: #e0b055;
-        --warn-soft: #33290f;
-
-        --tok-keyword: #ff7b72;
-        --tok-string: #a5d6ff;
-        --tok-number: #79c0ff;
-        --tok-comment: #8b949e;
-        --tok-type: #ffa657;
-        --tok-property: #d2a8ff;
-        --tok-operator: #9aa1ad;
-        --tok-meta: #ff7b72;
-    }
-}
+/* An explicit choice wins over the OS preference. `data-theme` is set by an inline
+   script in index.html before first paint, so switching never flashes the wrong theme. */
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"] { color-scheme: dark; }
 
 * { box-sizing: border-box; }
 

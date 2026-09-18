@@ -5,7 +5,7 @@
  * store — switching it keeps every bit of state, which is the point.
  */
 
-import { catalog, useStore, type LayoutId } from '../state/store.tsx';
+import { catalog, useStore, type LayoutId, type ThemeChoice } from '../state/store.tsx';
 import { listLanguages } from '../../core/languages/registry.ts';
 import { BASE_STYLES } from '../../core/catalog/types.ts';
 import { layouts } from '../layouts/registry.tsx';
@@ -25,6 +25,7 @@ export function Toolbar(): React.JSX.Element {
             <label>
                 Language
                 <select
+                    aria-label="Language"
                     value={state.doc.languageId}
                     onChange={(e) => dispatch({ type: 'setLanguage', value: e.target.value })}
                 >
@@ -39,6 +40,7 @@ export function Toolbar(): React.JSX.Element {
             <label>
                 Base style
                 <select
+                    aria-label="Base style"
                     value={state.doc.baseStyle}
                     onChange={(e) => dispatch({ type: 'setBaseStyle', value: e.target.value as never })}
                 >
@@ -53,6 +55,7 @@ export function Toolbar(): React.JSX.Element {
             <label>
                 Layout
                 <select
+                    aria-label="Layout"
                     value={state.layoutId}
                     onChange={(e) => dispatch({ type: 'setLayout', value: e.target.value as LayoutId })}
                 >
@@ -61,6 +64,19 @@ export function Toolbar(): React.JSX.Element {
                             {l.label}
                         </option>
                     ))}
+                </select>
+            </label>
+
+            <label>
+                Theme
+                <select
+                    aria-label="Theme"
+                    value={state.theme}
+                    onChange={(e) => dispatch({ type: 'setTheme', value: e.target.value as ThemeChoice })}
+                >
+                    <option value="system">Match system</option>
+                    <option value="light">Light</option>
+                    <option value="dark">Dark</option>
                 </select>
             </label>
 

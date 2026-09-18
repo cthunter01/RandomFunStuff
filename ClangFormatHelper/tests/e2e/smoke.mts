@@ -100,13 +100,45 @@ try {
         ['card-feed', '.layout.card-feed-layout'],
         ['workbench', '.layout.workbench'],
     ] as const) {
-        await page.select('.toolbar select:nth-of-type(1) ~ select, .toolbar label:nth-of-type(3) select', value);
+        await page.select('.toolbar select[aria-label="Layout"]', value);
         await page.waitForSelector(selector, { timeout: 15_000 });
         const yaml = await page.$eval('.output.yaml, .panel', (n) => n.textContent ?? '');
         void yaml;
         console.log(`OK  layout "${value}" mounted, state preserved`);
         await page.screenshot({ path: path.join(shotDir, `layout-${value}.png`) as `${string}.png` });
     }
+
+    // Theme: an explicit choice must beat the OS preference, survive a reload, and
+    // repaint without needing anything re-rendered by hand.
+    const themeProbe = () =>
+        page.evaluate(() => ({
+            bg: getComputedStyle(document.body).backgroundColor,
+            scheme: getComputedStyle(document.documentElement).colorScheme,
+            attr: document.documentElement.dataset.theme ?? '',
+            stored: localStorage.getItem('cfh.theme') ?? '',
+        }));
+
+    await page.select('.toolbar select[aria-label="Theme"]', 'dark');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === 'dark');
+    const dark = await themeProbe();
+    if (dark.scheme !== 'dark' || dark.bg === 'rgb(255, 255, 255)') fail(`dark theme not applied: ${JSON.stringify(dark)}`);
+    console.log(`OK  dark theme applied (${dark.bg})`);
+
+    await page.reload({ waitUntil: 'load' });
+    // The inline bootstrap in index.html must have run before anything painted.
+    const beforePaint = await page.evaluate(() => document.documentElement.dataset.theme ?? '');
+    if (beforePaint !== 'dark') fail('theme was not applied before first paint — it will flash');
+    await page.waitForSelector('.layout', { timeout: 60_000 });
+    if ((await themeProbe()).scheme !== 'dark') fail('theme did not survive a reload');
+    console.log('OK  theme persists and is applied before first paint');
+
+    await page.select('.toolbar select[aria-label="Theme"]', 'system');
+    await page.waitForFunction(() => document.documentElement.dataset.theme === undefined);
+    const system = await themeProbe();
+    if (system.scheme !== 'light dark' || system.stored !== '') {
+        fail(`"match system" should clear the override, got ${JSON.stringify(system)}`);
+    }
+    console.log('OK  "match system" hands control back to the OS');
 
     // The headline feature.
     await page.$$eval('.toolbar button', (buttons) => {

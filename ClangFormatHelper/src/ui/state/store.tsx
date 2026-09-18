@@ -27,10 +27,42 @@ const KNOWN_PATHS = new Set<string>(
 
 export type LayoutId = 'workbench' | 'diff-focus' | 'card-feed';
 
+/** `system` follows the OS; the other two override it. */
+export type ThemeChoice = 'system' | 'light' | 'dark';
+
+const THEME_KEY = 'cfh.theme';
+
+function storedTheme(): ThemeChoice {
+    try {
+        const value = localStorage.getItem(THEME_KEY);
+        return value === 'light' || value === 'dark' ? value : 'system';
+    } catch {
+        return 'system';
+    }
+}
+
+/**
+ * Drives the `data-theme` attribute the stylesheet keys off. Removing it entirely
+ * for `system` is deliberate — that lets `color-scheme: light dark` fall back to
+ * the OS preference rather than pinning whatever it happened to be at load.
+ */
+function applyTheme(choice: ThemeChoice): void {
+    const root = document.documentElement;
+    if (choice === 'system') delete root.dataset['theme'];
+    else root.dataset['theme'] = choice;
+    try {
+        if (choice === 'system') localStorage.removeItem(THEME_KEY);
+        else localStorage.setItem(THEME_KEY, choice);
+    } catch {
+        /* private mode: the choice just will not persist */
+    }
+}
+
 export interface AppState {
     doc: StyleDocument;
     samples: Record<string, string>;
     layoutId: LayoutId;
+    theme: ThemeChoice;
     /** Formatted output for the current sample and config. */
     formatted: string;
     /** The same sample under the untouched base style, for "what did my tweaks do?". */
@@ -57,6 +89,7 @@ type Action =
     | { type: 'resetAll' }
     | { type: 'setSample'; languageId: string; code: string }
     | { type: 'setLayout'; value: LayoutId }
+    | { type: 'setTheme'; value: ThemeChoice }
     | { type: 'formatted'; current: string; base: string }
     | { type: 'effective'; effective: EffectiveConfig; verdicts: Map<string, Verdict[]> }
     | { type: 'impact'; map: ImpactMap | null }
@@ -77,6 +110,7 @@ function initialState(): AppState {
         doc: createDocument(DEFAULT_LANGUAGE_ID, 'LLVM'),
         samples,
         layoutId: (localStorage.getItem('cfh.layout') as LayoutId | null) ?? 'workbench',
+        theme: storedTheme(),
         formatted: '',
         baseFormatted: '',
         effective: null,
@@ -112,6 +146,9 @@ function reducer(state: AppState, action: Action): AppState {
         case 'setLayout':
             localStorage.setItem('cfh.layout', action.value);
             return { ...state, layoutId: action.value };
+        case 'setTheme':
+            applyTheme(action.value);
+            return { ...state, theme: action.value };
         case 'formatted':
             return { ...state, formatted: action.current, baseFormatted: action.base };
         case 'effective':

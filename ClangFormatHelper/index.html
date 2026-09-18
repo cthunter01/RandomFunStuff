@@ -7,6 +7,18 @@
         <meta
             name="description"
             content="Build a .clang-format file interactively, powered by real clang-format compiled to WebAssembly. Runs entirely in your browser." />
+        <script>
+            // Applied before first paint so an explicit theme never flashes the
+            // other one on load. Kept inline and tiny for that reason.
+            try {
+                var stored = localStorage.getItem('cfh.theme');
+                if (stored === 'light' || stored === 'dark') {
+                    document.documentElement.dataset.theme = stored;
+                }
+            } catch (e) {
+                /* private mode: fall back to following the OS */
+            }
+        </script>
     </head>
     <body>
         <div id="root"></div>

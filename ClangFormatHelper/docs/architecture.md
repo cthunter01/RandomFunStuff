@@ -154,6 +154,36 @@ catch is that both layers must agree on every metric or the caret drifts from th
 height, padding and tab size are set once in a shared `.editor-layer` rule, and the browser test asserts the
 two layers report identical content heights.
 
+## Theming
+
+Light and dark are selectable (`Match system` / `Light` / `Dark`), defaulting to the OS preference.
+
+Every colour token is declared once as `light-dark(lightValue, darkValue)` and resolves against the root's
+`color-scheme`, so the whole theme switches on one property:
+
+```css
+:root { color-scheme: light dark;  --bg: light-dark(#ffffff, #16181d); /* ... */ }
+:root[data-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"]  { color-scheme: dark; }
+```
+
+This replaced a duplicated `@media (prefers-color-scheme: dark)` palette. Two reasons it is better than swapping
+custom properties:
+
+- **One definition per colour.** A duplicated block drifts — someone adds a token to one half and not the other.
+- **Native UI follows.** `color-scheme` is what tells the browser to render dropdowns, checkboxes, the caret and
+  scrollbars dark. Custom properties cannot reach any of those, so a variable-swap theme leaves white
+  scrollbars and light dropdowns behind.
+
+The cost is that `light-dark()` needs a 2024-era browser. That is already true of everything else here
+(WebAssembly, ES modules in workers), so it is not a new constraint.
+
+The stored choice is applied by a small inline script in `index.html` *before* the stylesheet paints, otherwise
+a dark-mode user gets a white flash on every load. The browser test asserts `data-theme` is already set at the
+`load` event, which is the only way to catch that regression — it is invisible to any assertion made afterwards.
+Choosing `Match system` deletes the attribute rather than pinning the current preference, so the OS stays in
+charge from then on.
+
 ## Known limitations
 
 - `IncludeCategories` and `RawStringFormats` are edited as JSON rather than through a dedicated editor.
