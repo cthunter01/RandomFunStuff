@@ -64,6 +64,49 @@ try {
     if (!after.includes('PointerAlignment: Left')) fail(`YAML did not pick up the change:\n${after}`);
     console.log('OK  changing an option updates the generated .clang-format');
 
+    // The option rail must not reorder when you edit a value. An earlier version
+    // ranked overridden options to the top, so the row you were editing jumped out
+    // from under the cursor the moment you touched it.
+    // Clear it like a user would: React ignores a raw `el.value = ''` assignment.
+    await page.click('.search');
+    await page.keyboard.down('Control');
+    await page.keyboard.press('KeyA');
+    await page.keyboard.up('Control');
+    await page.keyboard.press('Backspace');
+    await page.waitForFunction(() => document.querySelectorAll('.option-wrap').length > 100);
+
+    const readOrder = () => page.$$eval('.option-wrap .option-name', (nodes) => nodes.map((n) => n.textContent ?? ''));
+    const orderBefore = await readOrder();
+
+    // Pick a checkbox roughly in the middle, so a jump in either direction shows up.
+    const target = await page.evaluate(() => {
+        const wraps = [...document.querySelectorAll('.option-wrap')].filter((w) =>
+            w.querySelector('.option-editor input[type=checkbox]'),
+        );
+        const chosen = wraps[Math.floor(wraps.length / 2)]!;
+        const name = chosen.querySelector('.option-name')?.textContent ?? '';
+        (chosen.querySelector('.option-editor input[type=checkbox]') as HTMLInputElement).click();
+        return name;
+    });
+    await page.waitForFunction(
+        (name: string) => (document.querySelector('.output.yaml')?.textContent ?? '').includes(name),
+        {},
+        target,
+    );
+
+    const orderAfter = await readOrder();
+    if (orderBefore.join('|') !== orderAfter.join('|')) {
+        const moved = orderBefore.findIndex((n, i) => n !== orderAfter[i]);
+        fail(
+            `editing "${target}" reordered the rail — first difference at index ${moved}: ` +
+                `"${orderBefore[moved]}" became "${orderAfter[moved]}"`,
+        );
+    }
+    if (orderBefore.indexOf(target) !== orderAfter.indexOf(target)) {
+        fail(`"${target}" moved from index ${orderBefore.indexOf(target)} to ${orderAfter.indexOf(target)}`);
+    }
+    console.log(`OK  editing "${target}" left all ${orderAfter.length} rows in place`);
+
     // Syntax highlighting: grammars load after first paint, so wait for real tokens.
     await page.waitForSelector('.editor-backdrop [class^=tok-]', { timeout: 30_000 });
     await page.waitForSelector('.output.yaml [class^=tok-]', { timeout: 30_000 });
@@ -151,6 +194,42 @@ try {
     );
     const summary = await page.$eval('.toolbar .progress', (n) => n.textContent ?? '');
     console.log(`OK  impact analysis completed — ${summary.trim()}`);
+
+    // Results arriving must not reorder the rail either, while the order is static.
+    const orderAfterAnalysis = await readOrder();
+    if (orderAfterAnalysis.join('|') !== orderAfter.join('|')) {
+        fail('the impact analysis reordered the rail even though the order is set to static');
+    }
+    console.log('OK  impact results did not disturb the static order');
+
+    // Editing after an analysis keeps the (now stale) figures rather than blanking them.
+    await page.$$eval('.option-editor input[type=checkbox]', (boxes) => (boxes[0] as HTMLInputElement).click());
+    await page.waitForFunction(() => /out of date/.test(document.querySelector('.toolbar')?.textContent ?? ''));
+    const badgesKept = await page.$$eval('.badge.live', (n) => n.length);
+    if (badgesKept === 0) fail('editing after an analysis threw away every impact badge');
+    console.log(`OK  edits mark results stale but keep them (${badgesKept} badges retained)`);
+
+    // Ranking by impact is opt-in, and must be just as stable while editing —
+    // this is the mode where a naive implementation reshuffles on every click.
+    await page.select('.option-list select[aria-label="Option order"], select[aria-label="Option order"]', 'impact');
+    await page.waitForFunction(() => document.querySelectorAll('.option-wrap').length > 100);
+    const rankedBefore = await readOrder();
+    if (rankedBefore.join('|') === orderAfterAnalysis.join('|')) {
+        fail('"By impact" did not change the order at all, so it is not doing anything');
+    }
+    const yamlBefore = await page.$eval('.output.yaml', (n) => n.textContent ?? '');
+    await page.$$eval('.option-editor input[type=checkbox]', (boxes) => (boxes[1] as HTMLInputElement).click());
+    await page.waitForFunction(
+        (previous: string) => (document.querySelector('.output.yaml')?.textContent ?? '') !== previous,
+        {},
+        yamlBefore,
+    );
+    const rankedAfter = await readOrder();
+    if (rankedBefore.join('|') !== rankedAfter.join('|')) {
+        const moved = rankedBefore.findIndex((n, i) => n !== rankedAfter[i]);
+        fail(`editing while sorted by impact reordered the rail at index ${moved} ("${rankedBefore[moved]}")`);
+    }
+    console.log('OK  editing while sorted by impact also leaves every row in place');
     await page.screenshot({ path: path.join(shotDir, 'analysed.png') as `${string}.png`, fullPage: false });
 
     const fatal = consoleErrors.filter((e) => !/Download the React DevTools/.test(e));

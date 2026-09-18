@@ -55,6 +55,7 @@ export function OptionCardFeedPanel(): React.JSX.Element {
                                     provenance={state.effective?.provenance.get(row.path)}
                                     overridden={row.overridden}
                                     impact={state.impact?.get(row.path)}
+                                    impactStale={state.impactStale}
                                     verdicts={state.verdicts.get(row.path)}
                                     density="inline"
                                     language={state.doc.languageId}

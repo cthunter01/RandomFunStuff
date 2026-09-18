@@ -20,6 +20,8 @@ export type Density = 'comfortable' | 'compact' | 'inline';
 
 export interface ControlProps {
     path: string;
+    /** True when the impact figures predate the current config. */
+    impactStale?: boolean;
     label: string;
     kind: OptionDescriptor['kind'];
     values: { value: string; doc: string; needsPrerequisite: boolean }[];
@@ -134,11 +136,16 @@ function Editor({ path, kind, values, shorthandValues, value, onChange }: Contro
 
 export const OptionControl = memo(function OptionControl(props: ControlProps): React.JSX.Element {
     const { path, label, provenance, overridden, impact, verdicts, density, onReset } = props;
+    const stale = props.impactStale === true;
     const inert = impact?.verdict === 'inert';
     const blocked = verdicts?.find((v) => v.kind !== 'ok');
 
     return (
-        <div className={`option ${density} ${inert ? 'inert' : ''} ${overridden ? 'overridden' : ''}`}>
+        <div
+            className={`option ${density} ${inert && !stale ? 'inert' : ''} ${overridden ? 'overridden' : ''} ${
+                stale ? 'stale' : ''
+            }`}
+        >
             <div className="option-head">
                 <span className="option-name" title={path}>
                     {label}

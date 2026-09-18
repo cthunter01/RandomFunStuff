@@ -15,6 +15,7 @@ import { fromFileText, toFileText, toInlineStyle } from '../../core/config/seria
 import { resolveEffective, type EffectiveConfig } from '../../core/config/effective.ts';
 import { evaluateConstraints, verdictsByPath, type Verdict } from '../../core/config/constraints.ts';
 import { analyseImpact, type ImpactMap } from '../../core/analysis/impact.ts';
+import type { SortMode } from '../hooks/ordering.ts';
 import { DEFAULT_LANGUAGE_ID, getLanguage, listLanguages } from '../../core/languages/registry.ts';
 import { createFormatterClient, type FormatterClient } from '../../worker/client.ts';
 
@@ -70,7 +71,16 @@ export interface AppState {
     effective: EffectiveConfig | null;
     verdicts: Map<string, Verdict[]>;
     impact: ImpactMap | null;
+    /**
+     * True when the config or sample moved since the analysis ran.
+     *
+     * The results are deliberately *kept* rather than discarded. Throwing them away
+     * on every edit wiped every badge and — because the list could be ranked by
+     * impact — reshuffled the whole rail underneath the row being edited.
+     */
+    impactStale: boolean;
     impactProgress: { done: number; total: number } | null;
+    sortMode: SortMode;
     search: string;
     hideInert: boolean;
     onlyOverridden: boolean;
@@ -90,6 +100,7 @@ type Action =
     | { type: 'setSample'; languageId: string; code: string }
     | { type: 'setLayout'; value: LayoutId }
     | { type: 'setTheme'; value: ThemeChoice }
+    | { type: 'setSortMode'; value: SortMode }
     | { type: 'formatted'; current: string; base: string }
     | { type: 'effective'; effective: EffectiveConfig; verdicts: Map<string, Verdict[]> }
     | { type: 'impact'; map: ImpactMap | null }
@@ -116,7 +127,9 @@ function initialState(): AppState {
         effective: null,
         verdicts: new Map(),
         impact: null,
+        impactStale: false,
         impactProgress: null,
+        sortMode: (localStorage.getItem('cfh.sort') as SortMode | null) ?? 'static',
         search: '',
         hideInert: false,
         onlyOverridden: false,
@@ -130,31 +143,34 @@ function initialState(): AppState {
 function reducer(state: AppState, action: Action): AppState {
     switch (action.type) {
         case 'setBaseStyle':
-            return { ...state, doc: { ...state.doc, baseStyle: action.value }, impact: null };
+            return { ...state, doc: { ...state.doc, baseStyle: action.value }, impactStale: true };
         case 'setLanguage':
-            return { ...state, doc: { ...state.doc, languageId: action.value }, impact: null };
+            return { ...state, doc: { ...state.doc, languageId: action.value }, impact: null, impactStale: false };
         case 'setOverride':
-            return { ...state, doc: setOverride(state.doc, action.path, action.value), impact: null };
+            return { ...state, doc: setOverride(state.doc, action.path, action.value), impactStale: true };
         case 'clearOverride':
-            return { ...state, doc: clearOverride(state.doc, action.path), impact: null };
+            return { ...state, doc: clearOverride(state.doc, action.path), impactStale: true };
         case 'replaceDoc':
-            return { ...state, doc: action.doc, impact: null, importNotice: action.notice };
+            return { ...state, doc: action.doc, impactStale: true, importNotice: action.notice };
         case 'resetAll':
-            return { ...state, doc: createDocument(state.doc.languageId, state.doc.baseStyle), impact: null };
+            return { ...state, doc: createDocument(state.doc.languageId, state.doc.baseStyle), impactStale: true };
         case 'setSample':
-            return { ...state, samples: { ...state.samples, [action.languageId]: action.code }, impact: null };
+            return { ...state, samples: { ...state.samples, [action.languageId]: action.code }, impactStale: true };
         case 'setLayout':
             localStorage.setItem('cfh.layout', action.value);
             return { ...state, layoutId: action.value };
         case 'setTheme':
             applyTheme(action.value);
             return { ...state, theme: action.value };
+        case 'setSortMode':
+            localStorage.setItem('cfh.sort', action.value);
+            return { ...state, sortMode: action.value };
         case 'formatted':
             return { ...state, formatted: action.current, baseFormatted: action.base };
         case 'effective':
             return { ...state, effective: action.effective, verdicts: action.verdicts };
         case 'impact':
-            return { ...state, impact: action.map, impactProgress: null };
+            return { ...state, impact: action.map, impactStale: false, impactProgress: null };
         case 'impactProgress':
             return { ...state, impactProgress: { done: action.done, total: action.total } };
         case 'search':

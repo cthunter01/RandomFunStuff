@@ -123,6 +123,10 @@ button.primary { background: var(--accent); color: #fff; border-color: var(--acc
 /* Collapsed rows are cheap to skip; this removes the need for a virtualiser. */
 .option.compact { content-visibility: auto; contain-intrinsic-size: auto 56px; }
 .option.inert { opacity: 0.45; }
+/* Stale figures are still shown — they are the best information available — but
+   they stop dimming rows, because "no effect" may no longer be true. */
+.option.stale .badge.live, .option.stale .badge.dim { opacity: 0.6; }
+.toolbar .progress.stale { color: var(--warn); }
 .option.overridden { background: var(--accent-soft); }
 .option-head { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .option-name { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; }

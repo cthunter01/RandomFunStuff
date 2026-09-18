@@ -196,6 +196,27 @@ a dark-mode user gets a white flash on every load. The browser test asserts `dat
 Choosing `Match system` deletes the attribute rather than pinning the current preference, so the OS stays in
 charge from then on.
 
+## Option ordering
+
+The rail is **statically ordered**: groups in a fixed reading sequence (`GROUP_ORDER` in
+`src/ui/hooks/ordering.ts`), options alphabetical within each. A row's position is a function of the catalog
+alone, so nothing you do to a value can move it.
+
+That replaced a weighted sort that ranked by impact and pushed anything overridden to the top. It read well in
+a screenshot and was horrible to use: the row you were editing jumped out from under the cursor the moment you
+touched it. A settings list you cannot build muscle memory for is worse than one that is merely unsorted.
+
+Ranking by impact survives as an opt-in `Order` mode, and it is stable under editing as well. That required the
+second half of the fix: **an edit marks the impact results stale instead of discarding them**. Discarding meant
+every row's rank collapsed to nothing on each keystroke, which reshuffled the entire rail — and it threw away
+information the user had waited seconds for. Stale figures are dimmed and the toolbar says "out of date"; only
+a change of *language* invalidates them outright, since that swaps the code being measured.
+
+The comparators are pure functions rather than logic inside the hook, so the property that matters is directly
+testable: `compareRows` in static mode takes no notion of which options are overridden, so there is nothing an
+edit could perturb. The browser test checks the same thing end to end, by recording all 193 row names, toggling
+one in the middle, and asserting the sequence is byte-identical afterwards.
+
 ## Samples
 
 The sample library is teaching material, not filler: an option the sample never exercises can only report "no

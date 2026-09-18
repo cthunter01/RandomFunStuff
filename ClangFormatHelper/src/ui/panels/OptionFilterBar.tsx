@@ -8,6 +8,7 @@
  */
 
 import { useStore } from '../state/store.tsx';
+import type { SortMode } from '../hooks/ordering.ts';
 
 export function OptionFilterBar({ shown, total }: { shown: number; total: number }): React.JSX.Element {
     const { state, dispatch } = useStore();
@@ -37,6 +38,19 @@ export function OptionFilterBar({ shown, total }: { shown: number; total: number
                     onChange={(e) => dispatch({ type: 'onlyOverridden', value: e.target.checked })}
                 />
                 Only changed
+            </label>
+            <label className="check">
+                Order
+                <select
+                    aria-label="Option order"
+                    value={state.sortMode}
+                    onChange={(e) => dispatch({ type: 'setSortMode', value: e.target.value as SortMode })}
+                >
+                    <option value="static">Grouped A–Z</option>
+                    <option value="impact" disabled={!state.impact}>
+                        By impact
+                    </option>
+                </select>
             </label>
             <span className="count">
                 {shown} shown · {state.doc.overrides.size} changed

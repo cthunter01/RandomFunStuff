@@ -88,8 +88,9 @@ export function Toolbar(): React.JSX.Element {
                 </span>
             )}
             {impactSummary && !state.impactProgress && (
-                <span className="progress">
+                <span className={`progress ${state.impactStale ? 'stale' : ''}`}>
                     {impactSummary.live} of {impactSummary.live + impactSummary.inert} options affect this sample
+                    {state.impactStale && ' · out of date'}
                 </span>
             )}
             <button onClick={runImpact} disabled={state.status !== 'ready'}>

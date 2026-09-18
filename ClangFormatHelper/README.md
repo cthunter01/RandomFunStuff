@@ -58,6 +58,11 @@ wasm binary and fails if they have drifted apart.
 Pick a **base style**, then change whatever you like. The right-hand pane always shows the file you would commit:
 `BasedOnStyle` plus only the keys you actually changed, which is what a hand-written `.clang-format` looks like.
 
+The option list has a **static order** — groups in a fixed sequence, options alphabetical within each group —
+so a row never moves. Changing a value leaves it exactly where it was, which is what makes the list learnable.
+The **Order** control offers *By impact* if you would rather rank by what actually affects your code; that stays
+stable while you edit too, and only re-orders when a fresh analysis lands.
+
 Press **Analyse my code** to run the impact sweep. Afterwards every option carries a badge:
 
 | Badge             | Meaning                                                                   |
@@ -71,7 +76,8 @@ Press **Analyse my code** to run the impact sweep. Afterwards every option carri
 | `ignored`         | You set it and clang-format ignored it — usually a missing prerequisite.  |
 
 Impact is always **relative to your current config**, not a global claim. An option that does nothing now may
-well matter after you change something else.
+well matter after you change something else. Editing something marks the figures *out of date* rather than
+deleting them — stale numbers are more use than none, and keeping them is also what stops the list moving.
 
 ### Theme
 
