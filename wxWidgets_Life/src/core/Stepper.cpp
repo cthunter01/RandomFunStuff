@@ -1,7 +1,7 @@
-#include "core/Stepper.hpp"
+#include "core/Stepper.h"
 
-#include "core/BandedStepper.hpp"
-#include "core/ReferenceStepper.hpp"
+#include "core/BandedStepper.h"
+#include "core/ReferenceStepper.h"
 
 #include <algorithm>
 

@@ -1,6 +1,6 @@
-#include "core/Line.hpp"
+#include "core/Line.h"
 
-#include "core/Random.hpp"
+#include "core/Random.h"
 
 #include <algorithm>
 #include <cstdint>

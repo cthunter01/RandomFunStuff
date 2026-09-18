@@ -1,6 +1,6 @@
-#include "core/Ant.hpp"
+#include "core/Ant.h"
 
-#include "support/AsciiGrid.hpp"
+#include "support/AsciiGrid.h"
 
 #include <algorithm>
 #include <gtest/gtest.h>

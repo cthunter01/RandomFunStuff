@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/Pacer.hpp"
-#include "core/Speed.hpp"
-#include "core/World.hpp"
+#include "core/Pacer.h"
+#include "core/Speed.h"
+#include "core/World.h"
 
 #include <wx/timer.h>
 

@@ -1,4 +1,4 @@
-#include "core/ReferenceStepper.hpp"
+#include "core/ReferenceStepper.h"
 
 #include <cassert>
 

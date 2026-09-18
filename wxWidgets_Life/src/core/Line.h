@@ -2,7 +2,7 @@
 /// Bresenham line walk used for gap-free mouse strokes.
 #pragma once
 
-#include "core/Types.hpp"
+#include "core/Types.h"
 
 #include <concepts>
 #include <cstdint>

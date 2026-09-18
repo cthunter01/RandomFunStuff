@@ -1,12 +1,12 @@
 #pragma once
 
-#include "core/Pacer.hpp"
-#include "core/Rule.hpp"
-#include "core/Stepper.hpp"
-#include "core/Types.hpp"
-#include "core/World.hpp"
-#include "core/WorldLimits.hpp"
-#include "ui/SimulationRunner.hpp"
+#include "core/Pacer.h"
+#include "core/Rule.h"
+#include "core/Stepper.h"
+#include "core/Types.h"
+#include "core/World.h"
+#include "core/WorldLimits.h"
+#include "ui/SimulationRunner.h"
 
 #include <wx/event.h>
 #include <wx/frame.h>

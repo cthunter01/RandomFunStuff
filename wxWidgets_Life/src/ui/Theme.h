@@ -1,8 +1,8 @@
 #pragma once
 
-#include "render/RenderStyle.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/WxConvert.hpp"
+#include "render/RenderStyle.h"
+#include "ui/Defaults.h"
+#include "ui/WxConvert.h"
 
 #include <wx/event.h>
 #include <wx/settings.h>

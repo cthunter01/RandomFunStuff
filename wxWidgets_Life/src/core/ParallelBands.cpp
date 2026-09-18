@@ -1,4 +1,4 @@
-#include "core/ParallelBands.hpp"
+#include "core/ParallelBands.h"
 
 namespace life::core {
 

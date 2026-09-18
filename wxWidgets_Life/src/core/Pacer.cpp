@@ -1,4 +1,4 @@
-#include "core/Pacer.hpp"
+#include "core/Pacer.h"
 
 #include <algorithm>
 #include <limits>

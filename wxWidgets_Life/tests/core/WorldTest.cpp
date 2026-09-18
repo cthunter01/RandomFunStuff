@@ -1,10 +1,10 @@
-#include "core/World.hpp"
+#include "core/World.h"
 
-#include "core/Ant.hpp"
-#include "core/ParallelBands.hpp"
-#include "core/Random.hpp"
-#include "core/ReferenceStepper.hpp"
-#include "support/AsciiGrid.hpp"
+#include "core/Ant.h"
+#include "core/ParallelBands.h"
+#include "core/Random.h"
+#include "core/ReferenceStepper.h"
+#include "support/AsciiGrid.h"
 
 #include <algorithm>
 #include <cstddef>

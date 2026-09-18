@@ -1,7 +1,7 @@
 #pragma once
 
-#include "core/Types.hpp"
-#include "render/Types.hpp"
+#include "core/Types.h"
+#include "render/Types.h"
 
 #include <array>
 #include <cstddef>

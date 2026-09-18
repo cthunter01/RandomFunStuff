@@ -1,9 +1,9 @@
-#include "core/Stepper.hpp"
+#include "core/Stepper.h"
 
-#include "core/BandedStepper.hpp"
-#include "core/Random.hpp"
-#include "core/ReferenceStepper.hpp"
-#include "support/AsciiGrid.hpp"
+#include "core/BandedStepper.h"
+#include "core/Random.h"
+#include "core/ReferenceStepper.h"
+#include "support/AsciiGrid.h"
 
 #include <algorithm>
 #include <array>

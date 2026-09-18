@@ -1,10 +1,10 @@
 #pragma once
 
-#include "core/Ant.hpp"
-#include "core/Grid.hpp"
-#include "render/PixelBuffer.hpp"
-#include "render/RenderStyle.hpp"
-#include "render/Viewport.hpp"
+#include "core/Ant.h"
+#include "core/Grid.h"
+#include "render/PixelBuffer.h"
+#include "render/RenderStyle.h"
+#include "render/Viewport.h"
 
 #include <cstdint>
 #include <span>

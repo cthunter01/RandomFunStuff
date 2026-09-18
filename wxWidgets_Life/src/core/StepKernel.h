@@ -2,8 +2,8 @@
 /// The only hot loop of the simulation, built for AVX2 and baseline x86-64 (runtime dispatch).
 #pragma once
 
-#include "core/Rule.hpp"
-#include "core/Types.hpp"
+#include "core/Rule.h"
+#include "core/Types.h"
 
 #include <cstddef>
 #include <cstdint>

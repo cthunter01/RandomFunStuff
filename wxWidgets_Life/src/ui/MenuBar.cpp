@@ -1,7 +1,7 @@
-#include "ui/MenuBar.hpp"
+#include "ui/MenuBar.h"
 
-#include "ui/CommandIds.hpp"
-#include "ui/WxConvert.hpp"
+#include "ui/CommandIds.h"
+#include "ui/WxConvert.h"
 
 namespace life::ui {
 

@@ -1,8 +1,8 @@
-#include "core/World.hpp"
+#include "core/World.h"
 
-#include "core/BandedStepper.hpp"
-#include "core/ParallelBands.hpp"
-#include "core/Random.hpp"
+#include "core/BandedStepper.h"
+#include "core/ParallelBands.h"
+#include "core/Random.h"
 
 #include <algorithm>
 #include <cassert>

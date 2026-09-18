@@ -1,4 +1,4 @@
-#include "core/WorldLimits.hpp"
+#include "core/WorldLimits.h"
 
 #include <algorithm>
 #include <cstdint>

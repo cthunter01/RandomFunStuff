@@ -1,8 +1,8 @@
-#include "app/LifeApp.hpp"
+#include "app/LifeApp.h"
 
-#include "core/Rule.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/MainFrame.hpp"
+#include "core/Rule.h"
+#include "ui/Defaults.h"
+#include "ui/MainFrame.h"
 
 #include <wx/utils.h>
 

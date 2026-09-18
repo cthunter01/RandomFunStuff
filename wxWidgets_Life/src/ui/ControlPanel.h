@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/Ant.hpp"
-#include "core/Rule.hpp"
-#include "core/Speed.hpp"
-#include "core/Types.hpp"
+#include "core/Ant.h"
+#include "core/Rule.h"
+#include "core/Speed.h"
+#include "core/Types.h"
 
 #include <wx/button.h>
 #include <wx/checkbox.h>

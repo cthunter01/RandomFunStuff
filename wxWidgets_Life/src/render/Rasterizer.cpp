@@ -1,4 +1,4 @@
-#include "render/Rasterizer.hpp"
+#include "render/Rasterizer.h"
 
 #include <algorithm>
 #include <array>

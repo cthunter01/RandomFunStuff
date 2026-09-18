@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/World.hpp"
+#include "core/World.h"
 
 #include <wx/app.h>
 

@@ -1,9 +1,9 @@
-#include "ui/WorldSizeDialog.hpp"
+#include "ui/WorldSizeDialog.h"
 
-#include "core/Format.hpp"
-#include "core/WorldLimits.hpp"
-#include "ui/Theme.hpp"
-#include "ui/WxConvert.hpp"
+#include "core/Format.h"
+#include "core/WorldLimits.h"
+#include "ui/Theme.h"
+#include "ui/WxConvert.h"
 
 #include <wx/arrstr.h>
 #include <wx/sizer.h>

@@ -1,11 +1,11 @@
-#include "ui/ControlPanel.hpp"
+#include "ui/ControlPanel.h"
 
-#include "core/Format.hpp"
-#include "render/Viewport.hpp"
-#include "ui/CommandIds.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/Theme.hpp"
-#include "ui/WxConvert.hpp"
+#include "core/Format.h"
+#include "render/Viewport.h"
+#include "ui/CommandIds.h"
+#include "ui/Defaults.h"
+#include "ui/Theme.h"
+#include "ui/WxConvert.h"
 
 #include <wx/arrstr.h>
 #include <wx/statbox.h>

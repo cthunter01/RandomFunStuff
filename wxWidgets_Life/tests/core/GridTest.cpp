@@ -1,6 +1,6 @@
-#include "core/Grid.hpp"
+#include "core/Grid.h"
 
-#include "support/AsciiGrid.hpp"
+#include "support/AsciiGrid.h"
 
 #include <algorithm>
 #include <cstddef>

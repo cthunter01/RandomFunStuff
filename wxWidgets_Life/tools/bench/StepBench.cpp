@@ -3,13 +3,13 @@
 //   wxlife_bench [--size WxH] [--density D] [--threads N] [--bands N] [--generations G]
 //                [--engine banded|reference] [--rule B3/S23] [--bounded]
 
-#include "core/BandedStepper.hpp"
-#include "core/Format.hpp"
-#include "core/ParallelBands.hpp"
-#include "core/Rule.hpp"
-#include "core/Stepper.hpp"
-#include "core/World.hpp"
-#include "core/WorldLimits.hpp"
+#include "core/BandedStepper.h"
+#include "core/Format.h"
+#include "core/ParallelBands.h"
+#include "core/Rule.h"
+#include "core/Stepper.h"
+#include "core/World.h"
+#include "core/WorldLimits.h"
 
 #include <algorithm>
 #include <cctype>

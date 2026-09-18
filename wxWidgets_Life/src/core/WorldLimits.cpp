@@ -1,6 +1,6 @@
-#include "core/WorldLimits.hpp"
+#include "core/WorldLimits.h"
 
-#include "core/Format.hpp"
+#include "core/Format.h"
 
 #include <algorithm>
 #include <format>

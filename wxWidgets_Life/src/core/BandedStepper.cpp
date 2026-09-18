@@ -1,6 +1,6 @@
-#include "core/BandedStepper.hpp"
+#include "core/BandedStepper.h"
 
-#include "core/StepKernel.hpp"
+#include "core/StepKernel.h"
 
 #include <cassert>
 #include <cstddef>

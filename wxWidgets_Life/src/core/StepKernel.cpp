@@ -1,4 +1,4 @@
-#include "core/StepKernel.hpp"
+#include "core/StepKernel.h"
 
 #include <cstdint>   // also defines __GLIBC__ on glibc, which the test below needs
 

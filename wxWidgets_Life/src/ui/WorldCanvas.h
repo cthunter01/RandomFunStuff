@@ -1,12 +1,12 @@
 #pragma once
 
-#include "core/Types.hpp"
-#include "core/World.hpp"
-#include "render/PixelBuffer.hpp"
-#include "render/Rasterizer.hpp"
-#include "render/RenderStyle.hpp"
-#include "render/Types.hpp"
-#include "render/Viewport.hpp"
+#include "core/Types.h"
+#include "core/World.h"
+#include "render/PixelBuffer.h"
+#include "render/Rasterizer.h"
+#include "render/RenderStyle.h"
+#include "render/Types.h"
+#include "render/Viewport.h"
 
 #include <wx/event.h>
 #include <wx/gdicmn.h>

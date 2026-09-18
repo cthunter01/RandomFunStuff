@@ -1,6 +1,6 @@
-#include "core/Rule.hpp"
+#include "core/Rule.h"
 
-#include "core/Random.hpp"
+#include "core/Random.h"
 
 #include <cstddef>
 #include <gtest/gtest.h>

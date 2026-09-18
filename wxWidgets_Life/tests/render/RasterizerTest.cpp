@@ -1,14 +1,14 @@
-#include "render/Rasterizer.hpp"
+#include "render/Rasterizer.h"
 
-#include "core/Ant.hpp"
-#include "core/Grid.hpp"
-#include "core/Random.hpp"
-#include "core/Types.hpp"
-#include "render/PixelBuffer.hpp"
-#include "render/RenderStyle.hpp"
-#include "render/Types.hpp"
-#include "render/Viewport.hpp"
-#include "support/AsciiGrid.hpp"
+#include "core/Ant.h"
+#include "core/Grid.h"
+#include "core/Random.h"
+#include "core/Types.h"
+#include "render/PixelBuffer.h"
+#include "render/RenderStyle.h"
+#include "render/Types.h"
+#include "render/Viewport.h"
+#include "support/AsciiGrid.h"
 
 #include <algorithm>
 #include <array>

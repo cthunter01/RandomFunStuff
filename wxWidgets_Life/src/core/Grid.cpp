@@ -1,4 +1,4 @@
-#include "core/Grid.hpp"
+#include "core/Grid.h"
 
 #include <algorithm>
 #include <cassert>

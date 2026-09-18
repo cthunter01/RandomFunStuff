@@ -1,11 +1,11 @@
-#include "ui/WorldCanvas.hpp"
+#include "ui/WorldCanvas.h"
 
-#include "core/Line.hpp"
-#include "core/WorldLimits.hpp"
-#include "ui/CommandIds.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/Theme.hpp"
-#include "ui/WxConvert.hpp"
+#include "core/Line.h"
+#include "core/WorldLimits.h"
+#include "ui/CommandIds.h"
+#include "ui/Defaults.h"
+#include "ui/Theme.h"
+#include "ui/WxConvert.h"
 
 #include <wx/bitmap.h>
 #include <wx/dcclient.h>

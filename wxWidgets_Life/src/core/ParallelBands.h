@@ -2,7 +2,7 @@
 /// Runs a job over horizontal row bands on short-lived std::jthreads.
 #pragma once
 
-#include "core/Types.hpp"
+#include "core/Types.h"
 
 #include <algorithm>
 #include <concepts>

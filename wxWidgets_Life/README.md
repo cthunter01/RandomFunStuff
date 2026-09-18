@@ -251,7 +251,7 @@ becomes a redraw, and where to extend the code), read [docs/architecture.md](doc
 
 ## Configuration notes
 
-wxLife has no settings file. The start-up values are in `src/ui/Defaults.hpp`: a 512 × 512 world with
+wxLife has no settings file. The start-up values are in `src/ui/Defaults.h`: a 512 × 512 world with
 wrapping edges and Conway's rule, 25% random fill, one ant, 30 generations per second, and paused.
 
 - **World size.** Each side can be 1 to 100,000 cells.

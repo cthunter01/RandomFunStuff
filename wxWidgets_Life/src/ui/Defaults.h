@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/Speed.hpp"
-#include "core/Types.hpp"
-#include "render/Types.hpp"
+#include "core/Speed.h"
+#include "core/Types.h"
+#include "render/Types.h"
 
 #include <chrono>
 

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Speed.hpp"
+#include "core/Speed.h"
 
 #include <chrono>
 #include <cstdint>

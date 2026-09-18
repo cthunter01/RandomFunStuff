@@ -1,10 +1,10 @@
 #pragma once
 
-#include "core/Ant.hpp"
-#include "core/Grid.hpp"
-#include "core/Rule.hpp"
-#include "core/Stepper.hpp"
-#include "core/Types.hpp"
+#include "core/Ant.h"
+#include "core/Grid.h"
+#include "core/Rule.h"
+#include "core/Stepper.h"
+#include "core/Types.h"
 
 #include <cstdint>
 #include <memory>

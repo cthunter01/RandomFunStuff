@@ -2,8 +2,8 @@
 /// Langton's ant: which way an ant faces, the two-state turn rule, and where an ant starts.
 #pragma once
 
-#include "core/Grid.hpp"
-#include "core/Types.hpp"
+#include "core/Grid.h"
+#include "core/Types.h"
 
 #include <array>
 #include <cstdint>

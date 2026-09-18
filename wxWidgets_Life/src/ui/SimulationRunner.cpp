@@ -1,4 +1,4 @@
-#include "ui/SimulationRunner.hpp"
+#include "ui/SimulationRunner.h"
 
 #include <algorithm>
 #include <utility>

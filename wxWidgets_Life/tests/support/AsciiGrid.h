@@ -2,8 +2,8 @@
 /// Test helpers that turn small grids into text and back, so expected patterns can be read at a glance.
 #pragma once
 
-#include "core/Grid.hpp"
-#include "core/Types.hpp"
+#include "core/Grid.h"
+#include "core/Types.h"
 
 #include <cstddef>
 #include <initializer_list>

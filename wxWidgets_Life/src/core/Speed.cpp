@@ -1,4 +1,4 @@
-#include "core/Speed.hpp"
+#include "core/Speed.h"
 
 #include <cmath>
 #include <format>

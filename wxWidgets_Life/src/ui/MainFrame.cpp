@@ -1,15 +1,15 @@
-#include "ui/MainFrame.hpp"
+#include "ui/MainFrame.h"
 
-#include "core/Format.hpp"
-#include "core/ReferenceStepper.hpp"
-#include "render/RenderStyle.hpp"
-#include "ui/CommandIds.hpp"
-#include "ui/ControlPanel.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/MenuBar.hpp"
-#include "ui/WorldCanvas.hpp"
-#include "ui/WorldSizeDialog.hpp"
-#include "ui/WxConvert.hpp"
+#include "core/Format.h"
+#include "core/ReferenceStepper.h"
+#include "render/RenderStyle.h"
+#include "ui/CommandIds.h"
+#include "ui/ControlPanel.h"
+#include "ui/Defaults.h"
+#include "ui/MenuBar.h"
+#include "ui/WorldCanvas.h"
+#include "ui/WorldSizeDialog.h"
+#include "ui/WxConvert.h"
 
 #include <wx/aboutdlg.h>
 #include <wx/button.h>

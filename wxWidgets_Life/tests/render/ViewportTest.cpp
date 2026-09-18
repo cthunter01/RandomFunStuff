@@ -1,9 +1,9 @@
-#include "render/Viewport.hpp"
+#include "render/Viewport.h"
 
-#include "core/Random.hpp"
-#include "core/Types.hpp"
-#include "core/WorldLimits.hpp"
-#include "render/Types.hpp"
+#include "core/Random.h"
+#include "core/Types.h"
+#include "core/WorldLimits.h"
+#include "render/Types.h"
 
 #include <algorithm>
 #include <cstddef>

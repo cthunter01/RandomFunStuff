@@ -1,4 +1,4 @@
-#include "render/PixelBuffer.hpp"
+#include "render/PixelBuffer.h"
 
 #include <cassert>
 

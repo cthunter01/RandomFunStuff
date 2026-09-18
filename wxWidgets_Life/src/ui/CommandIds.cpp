@@ -1,4 +1,4 @@
-#include "ui/CommandIds.hpp"
+#include "ui/CommandIds.h"
 
 #include <wx/event.h>
 

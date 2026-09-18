@@ -48,7 +48,7 @@ target. The rules:
    - Each layer's `CMakeLists.txt` links only the layers below it.
    - The `layering` test (`cmake/CheckLayering.cmake`) searches the include lines of `core`, `render`
      and `ui` for forbidden directories, in every spelling (`# include`, `<...>` or `"..."`).
-6. **Include paths start at the layer directory,** for example `#include "core/World.hpp"`, so every
+6. **Include paths start at the layer directory,** for example `#include "core/World.h"`, so every
    include line shows which layer it uses.
 
 The unit tests (`wxlife_tests`) link only `core` and `render`. Everything with real logic is below the
@@ -63,10 +63,10 @@ Every other place that shows one of these values is only a view of it.
 |---|---|
 | Cells, automaton, ants, rule, topology, engine, generation, population | `core::World`, held by `app::LifeApp` |
 | Running flag, speed, pacing, measured rate | `ui::SimulationRunner`, a member of `MainFrame` |
-| Cell size, scroll offset, grid-line flag, colours | `ui::WorldCanvas`, through `render::Viewport` and `render::RenderStyle` (colours from `ui/Theme.hpp`) |
+| Cell size, scroll offset, grid-line flag, colours | `ui::WorldCanvas`, through `render::Viewport` and `render::RenderStyle` (colours from `ui/Theme.h`) |
 | Random-fill density, rule text being edited, preset selection | The `ui::ControlPanel` widgets |
 | Memory budget | `MainFrame`, computed once with `core::defaultMemoryBudget()` |
-| Start-up values | `ui/Defaults.hpp` |
+| Start-up values | `ui/Defaults.h` |
 
 **Only two classes change the World,** and both run on the UI thread:
 - `MainFrame` changes it in response to user commands: clear, randomize, `setCells`, resize, rule,
@@ -121,7 +121,7 @@ applies to a cell with *n* live neighbours.
 **Automata.** `World::step()` switches on `Automaton`, and the switch has no `default`, so `-Wswitch`
 lists every place a third automaton would need.
 - **`Automaton::Life`** is the path above: refresh the border, run the stepper into `next_`, swap.
-- **`Automaton::LangtonAnt`** (`core/Ant.hpp`, header-only) moves each ant of `ants_` once, in index
+- **`Automaton::LangtonAnt`** (`core/Ant.h`, header-only) moves each ant of `ants_` once, in index
   order, straight on `current_`. There is no border to refresh and no buffer to swap, and each ant
   therefore sees what the ones before it have just left. One move is: turn right on a dead cell or left
   on a live one, flip that cell, step forward. `advance()` returns the ±1 the population changed by, so
@@ -193,8 +193,8 @@ The pacer and the meter take the time as an argument, so their tests never sleep
 ## Rendering and the camera (`render`, `WorldCanvas`)
 
 **Units.** Everything on the canvas is measured in *device* pixels (`render::Pixel`, 64-bit). A cell
-size of 1 is therefore one physical pixel, even on a HiDPI screen. `render/Types.hpp` holds the pixel
-types and `Rgb`, as `core/Types.hpp` does for cells.
+size of 1 is therefore one physical pixel, even on a HiDPI screen. `render/Types.h` holds the pixel
+types and `Rgb`, as `core/Types.h` does for cells.
 - `WorldCanvas::deviceClientSize()` and `toDevice()` multiply wx's logical coordinates by
   `GetContentScaleFactor()`.
 - The bitmap carries the same factor, so wx draws it 1:1 on the physical display.
@@ -405,7 +405,7 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
 
 | Pitfall | Where it is handled |
 |---|---|
-| wxGTK keeps the C locale, so an implicit `std::string` → `wxString` conversion breaks "×" and "·" | All non-ASCII text goes through `toWx()` (`WxConvert.hpp`) |
+| wxGTK keeps the C locale, so an implicit `std::string` → `wxString` conversion breaks "×" and "·" | All non-ASCII text goes through `toWx()` (`WxConvert.h`) |
 | `~wxMenuBar` leaves the frame's pointer to it dangling, so `DestroyChildren()` in a frame destructor deletes the menubar twice | `MainFrame` has no destructor |
 | `wxTextCtrl::SetValue` sends an event | `ControlPanel::setRule` uses `ChangeValue` |
 | `SetLabel` treats `&` as a mnemonic | Error lines use `SetLabelText` |
@@ -418,7 +418,7 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
 | GTK changes sliders, number boxes and choices under the wheel even when they have no focus | `ControlPanel` consumes those wheel events unless the control has the focus |
 | On Enter in a text box, wxGTK presses a dialog's OK button even while it is disabled | `WorldSizeDialog` overrides `Validate()`, which wx asks before it accepts a dialog |
 | `wxSpinCtrl::GetValue()` silently clamps what was typed | `WorldSizeDialog` parses `GetTextValue()` |
-| The desktop can switch between light and dark while the app runs | `WorldCanvas` and `useErrorColour()` (`ui/Theme.hpp`) handle `wxEVT_SYS_COLOUR_CHANGED` |
+| The desktop can switch between light and dark while the app runs | `WorldCanvas` and `useErrorColour()` (`ui/Theme.h`) handle `wxEVT_SYS_COLOUR_CHANGED` |
 | wx asserts when a window is destroyed while it holds the mouse capture | `onClose` calls `cancelStroke()`; `endDrag()` releases the capture only if `HasCapture()` |
 | wxGTK sends the second press of a quick double click only as a double-click event | `WorldCanvas` also binds the three `*_DCLICK` events and treats them as presses |
 | GTK overlay scrollbars make the client size wx reports differ from the area GTK gives the canvas | `LifeApp::Initialize()` sets `GTK_OVERLAY_SCROLLING=0` before GTK starts |
@@ -454,7 +454,7 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
   a cell against a floating-point reference, checks that zooming there and back restores the offset,
   and compares `cellAt` and `visibleCells` with brute-force results.
 - **Other suites.** The rest of `core` (worlds, rules, grids, lines, bands, random numbers, limits,
-  speed, pacing and the rate meter, formatting) has its own suites. `tests/support/AsciiGrid.hpp` lets
+  speed, pacing and the rate meter, formatting) has its own suites. `tests/support/AsciiGrid.h` lets
   tests write patterns as text, such as `".O."`.
 - **`GuiSmokeTest`** (`wxlife_gui_tests`, CTest label `gui`) opens a real `MainFrame` per test. It sends
   commands with `emitCommand()` and synthetic wx events to the controls, the canvas and the scrollbars,
@@ -482,28 +482,28 @@ The last row is the limit of stepping on the UI thread. Background stepping is a
 | Persistent thread pool | `forEachBand()` is the only code that creates threads | Replace its body; nothing else changes. A quick prototype pool stepped 1000² in 0.15 ms with 2 bands (0.38 ms with threads started per step) and in 0.09 ms with 4, so `suggestedBandCount()` could then split smaller worlds too. |
 | Background stepping (worlds of more than about 200 million cells on this machine) | `SimulationRunner` is the only caller of `World::step()`, and painting reads only `World::cells()` | Step a copy on a `std::jthread` and hand finished grids to the canvas. This stays inside `ui/`, plus a small `core` helper. |
 | Other rule families (Generations, Larger than Life) | Only the steppers interpret a `Rule`; the rest of the code only parses, prints and compares it. `Cell` is a byte. | Make `Rule` a `std::variant` and give each family its own stepper, plus a case in `Rule::toString()`, `findPreset()` and the preset list. The rasterizer would need colours for the extra states. |
-| More automata (other turmites, multi-state ants) | `Automaton`, `kAutomata` and the `default`-less switch in `World::step()`; `core/Ant.hpp` holds the ant's own rule | Add an enum value and a `kAutomata` entry; `-Wswitch` then points at the four switches that need a case: `toString(Automaton)`, `World::step()`, and `worldText()` and `automatonMenuItem()` in `MainFrame.cpp`. The panel's choice is built from `kAutomata`, so it needs no change. Multi-state cells would additionally break the binary assumptions listed in the row above. With a third automaton it is time to extract an interface from `World` instead of widening the switch. |
+| More automata (other turmites, multi-state ants) | `Automaton`, `kAutomata` and the `default`-less switch in `World::step()`; `core/Ant.h` holds the ant's own rule | Add an enum value and a `kAutomata` entry; `-Wswitch` then points at the four switches that need a case: `toString(Automaton)`, `World::step()`, and `worldText()` and `automatonMenuItem()` in `MainFrame.cpp`. The panel's choice is built from `kAutomata`, so it needs no change. Multi-state cells would additionally break the binary assumptions listed in the row above. With a third automaton it is time to extract an interface from `World` instead of widening the switch. |
 | Other topologies (cylinder, Klein bottle) | `Topology` and `kTopologies`. `-Wswitch` lists the `core` code that needs a case: `toString(Topology)`, `Grid::updateBorder()` and the `alive` lambda in `ReferenceStepper::step()`. | Add an enum value, a `kTopologies` entry and a copy rule; `StepperTest` and `WorldTest` then cover it. The Wrap Edges toggle in `MainFrame` would become a choice. |
 | Sparse or infinite worlds, HashLife | The UI uses only `World`'s public interface | Extract an interface from `World` once a second implementation exists. `Rasterizer::render()` takes the dense `Grid` from `World::cells()`, so it would read cells through the new interface too. `Viewport` would need an unbounded extent. |
 | Zooming out below 1 px, a minimap | `Viewport` (`int` cell size) and `Rasterizer` | Replace the cell size with a scale type, and add a downsampling path. |
 | Pattern files (RLE, plaintext) | `core` has no wx dependency | Add a new `core` reader that returns `std::expected`, a `World` stamping function, and File → Open/Save. |
 | Undo/redo, selection | Every edit enters through a `CommandId` or through `paintCells` → `MainFrame::onPaintCells()` | Let `World::setCells()` report the changed cells, and add an undo stack in `ui/`. |
-| Themes, saved settings | `RenderStyle`, `darkStyle()`/`lightStyle()`, `ui::defaults` and `Speed` are plain values. Only `ui/Theme.hpp` (`themeStyle()`, `useErrorColour()`) picks colours from the desktop theme. | Load and save them with `wxConfig` in `LifeApp`. A user theme would replace the choice in `ui/Theme.hpp`. |
+| Themes, saved settings | `RenderStyle`, `darkStyle()`/`lightStyle()`, `ui::defaults` and `Speed` are plain values. Only `ui/Theme.h` (`themeStyle()`, `useErrorColour()`) picks colours from the desktop theme. | Load and save them with `wxConfig` in `LifeApp`. A user theme would replace the choice in `ui/Theme.h`. |
 | Parallel rasterizer, OpenGL canvas | `Rasterizer::render()` (pixel rows are independent); `WorldCanvas::onPaint()` is the only blit | Use `forEachBand()` over pixel rows, or add a `wxGLCanvas` variant (turn `wxUSE_OPENGL` back on). |
 | Statistics, history plots | `MainFrame::onSimulationTick()` receives every `TickReport` | Subscribe there. |
 | Command-line batch runs | `wxlife_bench` links only `core` | Add a `wxlife_cli` next to it. |
 
 ## Suggested reading order
 
-1. `core/Rule.hpp`: the B/S masks, the `constexpr` parser and the presets.
-2. `core/Grid.hpp`, `core/Grid.cpp`: the ghost border and the torus copy order.
+1. `core/Rule.h`: the B/S masks, the `constexpr` parser and the presets.
+2. `core/Grid.h`, `core/Grid.cpp`: the ghost border and the torus copy order.
 3. `core/ReferenceStepper.cpp`: the executable specification.
 4. `core/StepKernel.cpp`: the only hot loop.
-5. `core/ParallelBands.hpp`, `core/BandedStepper.cpp`: the parallel bands.
-6. `core/World.hpp`, `core/World.cpp`: the model, its counters and its edits.
-7. `core/Ant.hpp`: Langton's ant, and with it the other half of `World::step()`.
-8. `core/Pacer.hpp`, `core/Pacer.cpp`: turning wall time into generations.
-9. `render/Viewport.hpp`, `render/Viewport.cpp`: the camera, clamping and anchored zoom.
+5. `core/ParallelBands.h`, `core/BandedStepper.cpp`: the parallel bands.
+6. `core/World.h`, `core/World.cpp`: the model, its counters and its edits.
+7. `core/Ant.h`: Langton's ant, and with it the other half of `World::step()`.
+8. `core/Pacer.h`, `core/Pacer.cpp`: turning wall time into generations.
+9. `render/Viewport.h`, `render/Viewport.cpp`: the camera, clamping and anchored zoom.
 10. `render/Rasterizer.cpp`: cell stamps and row copying.
 11. `ui/SimulationRunner.cpp`: the one-shot timer.
 12. `ui/WorldCanvas.cpp`: painting, scrollbars, mouse and keys.

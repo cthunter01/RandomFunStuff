@@ -1,6 +1,6 @@
 #pragma once
 
-#include "core/Types.hpp"
+#include "core/Types.h"
 
 #include <wx/button.h>
 #include <wx/checkbox.h>

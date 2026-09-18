@@ -10,22 +10,22 @@
 // configured but cannot be opened fails every test. Paints are checked only while the display draws
 // windows, which a locked or switched-off screen may not do.
 
-#include "core/Ant.hpp"
-#include "core/Format.hpp"
-#include "core/Rule.hpp"
-#include "core/Speed.hpp"
-#include "core/Stepper.hpp"
-#include "core/Types.hpp"
-#include "core/World.hpp"
-#include "core/WorldLimits.hpp"
-#include "render/Viewport.hpp"
-#include "ui/CommandIds.hpp"
-#include "ui/ControlPanel.hpp"
-#include "ui/Defaults.hpp"
-#include "ui/MainFrame.hpp"
-#include "ui/Theme.hpp"
-#include "ui/WorldCanvas.hpp"
-#include "ui/WxConvert.hpp"
+#include "core/Ant.h"
+#include "core/Format.h"
+#include "core/Rule.h"
+#include "core/Speed.h"
+#include "core/Stepper.h"
+#include "core/Types.h"
+#include "core/World.h"
+#include "core/WorldLimits.h"
+#include "render/Viewport.h"
+#include "ui/CommandIds.h"
+#include "ui/ControlPanel.h"
+#include "ui/Defaults.h"
+#include "ui/MainFrame.h"
+#include "ui/Theme.h"
+#include "ui/WorldCanvas.h"
+#include "ui/WxConvert.h"
 
 #include <wx/app.h>
 #include <wx/button.h>

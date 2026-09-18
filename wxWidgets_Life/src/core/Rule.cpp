@@ -1,4 +1,4 @@
-#include "core/Rule.hpp"
+#include "core/Rule.h"
 
 namespace life::core {
 

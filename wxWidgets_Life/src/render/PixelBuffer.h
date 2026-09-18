@@ -1,6 +1,6 @@
 #pragma once
 
-#include "render/Types.hpp"
+#include "render/Types.h"
 
 #include <cstddef>
 #include <cstdint>

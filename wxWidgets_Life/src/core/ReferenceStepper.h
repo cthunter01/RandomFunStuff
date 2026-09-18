@@ -1,9 +1,9 @@
 #pragma once
 
-#include "core/Grid.hpp"
-#include "core/Rule.hpp"
-#include "core/Stepper.hpp"
-#include "core/Types.hpp"
+#include "core/Grid.h"
+#include "core/Rule.h"
+#include "core/Stepper.h"
+#include "core/Types.h"
 
 namespace life::core {
 

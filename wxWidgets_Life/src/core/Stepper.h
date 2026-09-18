@@ -1,8 +1,8 @@
 #pragma once
 
-#include "core/Grid.hpp"
-#include "core/Rule.hpp"
-#include "core/Types.hpp"
+#include "core/Grid.h"
+#include "core/Rule.h"
+#include "core/Types.h"
 
 #include <array>
 #include <cstdint>
